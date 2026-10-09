@@ -1,0 +1,709 @@
+import { calc, money, r2 } from "./calc.js";
+import { formatSeal, cleanSeal } from "./canonical.js";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, syncAll, saveSealKey, sign, clearKeys } from "./store.js";
+import { preloadLogo, sharePdf } from "./pdf.js";
+
+const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
+const VERSION = "MVP0 · 2026-10-09";
+const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
+const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
+const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
+
+const I = {
+  x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  save: '<svg viewBox="0 0 24 24"><path d="M7 3h10v18l-5-4-5 4z"/></svg>',
+  send: '<svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/><path d="M11 13l9-9"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  minus: '<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
+  gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.5l2 1.2M17.8 15.3l2 1.2M4.2 16.5l2-1.2M17.8 8.7l2-1.2"/><circle cx="12" cy="12" r="7"/></svg>',
+  doc: '<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/></svg>',
+  new: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M12 9v6M9 12h6"/></svg>',
+  sync: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>',
+  shield: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'
+};
+
+// ---------- Estado ----------
+const S = {
+  user: ls.get("user", null),
+  cfg: ls.get("config", null),
+  catalog: enrich((ls.get("catalog", null) || { productos: [] }).productos),
+  revisar: (ls.get("catalog", null) || { revisar: [] }).revisar || [],
+  clientes: (ls.get("clientes", null) || { clientes: [] }).clientes,
+  draft: ls.get("draft", null),
+  authExpired: false,
+  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false
+};
+const $app = document.getElementById("app");
+const $sheet = document.getElementById("sheet-root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const saveDraft = () => ls.set("draft", S.draft);
+
+function toast(msg, ms = 2400) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), ms);
+}
+const route = () => (location.hash || "#/").slice(1);
+const go = (h) => { if (location.hash === "#" + h) render(); else location.hash = h; };
+
+// ---------- Arranque ----------
+async function boot() {
+  preloadLogo().catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  window.addEventListener("hashchange", render);
+  window.addEventListener("online", () => { refresh(); renderPill(); });
+  window.addEventListener("offline", renderPill);
+  setInterval(() => { if (quotes.all().some(needsSync)) runSync(); }, 60000);
+  const hadUser = !!S.user;
+  if (!hadUser && navigator.onLine && !route().startsWith("/login")) await refresh();
+  render();
+  if (hadUser) refresh();
+}
+
+async function refresh() {
+  if (!navigator.onLine) return;
+  try {
+    const me = await api("me");
+    await saveSealKey(me.email, me.sealKey);
+    delete me.sealKey;
+    S.user = me; ls.set("user", me); S.authExpired = false;
+    const [cfg, cat, cli] = await Promise.all([api("config"), api("catalogo"), api("clientes")]);
+    S.cfg = cfg; ls.set("config", cfg);
+    ls.set("catalog", cat); S.catalog = enrich(cat.productos); S.revisar = cat.revisar || [];
+    ls.set("clientes", cli); S.clientes = cli.clientes;
+    if (!route() || route() === "/" ) go("/nueva");
+    await runSync();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      if (!S.user) { go("/login"); return; }
+      S.authExpired = true; render();
+    }
+  }
+}
+async function runSync() {
+  const r = await syncAll(() => { renderPill(); if (route().startsWith("/cotizaciones") || route().startsWith("/cotizacion/")) render(); });
+  if (r && r.auth) { S.authExpired = true; render(); }
+  renderPill();
+  return r;
+}
+
+// ---------- Render principal ----------
+function render() {
+  const r = route();
+  closeSheet();
+  if (r.startsWith("/login") || (!S.user && !r.startsWith("/verificar"))) return renderLogin();
+  if (!S.cfg) S.cfg = {};
+  if (r.startsWith("/nueva")) return renderWizard();
+  if (r.startsWith("/cotizacion/")) return renderDetail(decodeURIComponent(r.split("/")[2]));
+  if (r.startsWith("/ajustes")) return renderSettings();
+  if (r.startsWith("/verificar")) return renderVerify(r.split("/").slice(2).map(decodeURIComponent));
+  return renderList();
+}
+
+function pillHtml() {
+  const pend = quotes.all().filter(needsSync);
+  const err = pend.filter((q) => q.sync === "error").length;
+  if (!navigator.onLine) return `<button class="sync-pill" data-act="sync"><span class="dot"></span>Sin internet${pend.length ? " · " + pend.length : ""}</button>`;
+  if (err) return `<button class="sync-pill err" data-act="sync"><span class="dot"></span>${err} con error</button>`;
+  if (pend.length) return `<button class="sync-pill pend" data-act="sync"><span class="dot"></span>${pend.length} por subir</button>`;
+  return `<button class="sync-pill" data-act="sync">${I.check.replace("<svg", '<svg width="16" height="16"')} Al día</button>`;
+}
+function renderPill() { const el = document.getElementById("pill"); if (el) el.innerHTML = pillHtml(); }
+
+const tabbar = (on) => `
+  <nav class="tabbar">
+    <button class="tab ${on === "nueva" ? "on" : ""}" data-act="nav" data-to="/nueva">${I.new}Nueva</button>
+    <button class="tab ${on === "lista" ? "on" : ""}" data-act="nav" data-to="/cotizaciones">${I.doc}Cotizaciones</button>
+  </nav>`;
+const authBanner = () => S.authExpired ? `<div class="notice">Tu sesión venció. Las cotizaciones se guardan, pero no suben a Odoo hasta que entres de nuevo. <button class="pill soft" style="margin-top:8px;height:40px" data-act="nav" data-to="/login">Entrar con Google</button></div>` : "";
+
+// ---------- Login ----------
+function renderLogin() {
+  const err = new URLSearchParams(route().split("?")[1] || "").get("e");
+  const msg = !err ? "" : err === "csrf" || err === "token"
+    ? "No se pudo validar el inicio de sesión. Inténtalo otra vez."
+    : `La cuenta ${esc(err)} no tiene acceso a Kuukum Cotiza.`;
+  $app.innerHTML = `
+    <div class="login"><div class="box">
+      <img src="/img/logo.png" alt="Kuukum">
+      <div><h1 style="margin:0 0 6px;font-size:24px">Kuukum Cotiza</h1><p>Entra con tu cuenta de Google autorizada.</p></div>
+      ${msg ? `<div class="notice">${msg}</div>` : ""}
+      ${navigator.onLine ? `<div id="gbtn" style="min-height:44px"></div>` : `<div class="notice info">Necesitas internet para entrar. Después la app funciona sin conexión.</div>`}
+      ${S.user ? `<button class="pill ghost" data-act="nav" data-to="/cotizaciones">Seguir sin conexión</button>` : ""}
+    </div></div>`;
+  if (!navigator.onLine) return;
+  const init = () => {
+    window.google.accounts.id.initialize({
+      client_id: CLIENT_ID, ux_mode: "redirect", login_uri: location.origin + "/api/auth/google", auto_select: false
+    });
+    window.google.accounts.id.renderButton(document.getElementById("gbtn"),
+      { theme: "outline", size: "large", shape: "pill", text: "signin_with", locale: "es", width: 280 });
+  };
+  if (window.google && window.google.accounts) return init();
+  const s = document.createElement("script");
+  s.src = "https://accounts.google.com/gsi/client"; s.async = true; s.onload = init;
+  document.head.appendChild(s);
+}
+
+// ---------- Asistente ----------
+function newDraft(base = {}) {
+  const c = S.cfg || {};
+  return {
+    uuid: crypto.randomUUID(), folio: null, fecha: new Date().toISOString(), creadoPor: S.user.email,
+    cliente: { odooId: null, nombre: "", tel: "", email: "" }, canal: "WA",
+    items: [], desc: 0, iva: false,
+    anticipoPct: Number(c.anticipo_pct ?? 60), entrega: c.entrega_texto || "5 a 7 días hábiles",
+    vigencia: Number(c.vigencia_dias ?? 15), notas: "", estado: "borrador", step: 1, ...base
+  };
+}
+function stepValid(n, d = S.draft) {
+  if (n === 1) return !!(d.cliente.nombre || "").trim();
+  if (n === 2) return d.items.length > 0 && d.items.every((i) => i.q > 0 && i.p > 0);
+  if (n === 3) return Number(d.anticipoPct) >= 0 && Number(d.anticipoPct) <= 100;
+  return true;
+}
+
+function renderWizard() {
+  if (!S.draft) { S.draft = newDraft(); saveDraft(); }
+  const d = S.draft, n = d.step || 1;
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="wiz-head">
+        <div class="row"><h1>Nueva cotización</h1>${d.folio ? `<span class="num muted small">${esc(d.folio)}</span>` : ""}</div>
+        <div class="progress">${STEPS.map((_, i) => `<span class="${i < n ? "on" : ""}"></span>`).join("")}</div>
+        <div class="step-name">Paso ${n} de 4 · ${STEPS[n - 1]}</div>
+      </header>
+      <main class="content" id="step">${[0, stepCliente, stepProductos, stepCondiciones, stepVerificar][n]()}</main>
+      <div class="actions" id="wizact">${wizActions(n)}</div>
+    </div>`;
+  if (n === 4) prepareSeal();
+}
+function wizActions(n) {
+  const back = n > 1 ? `<button class="act ghost" data-act="step" data-to="${n - 1}"><span class="c">${I.back}</span>Atrás</button>` : "";
+  const discard = `<button class="act ghost" data-act="discard"><span class="c">${I.x}</span>Descartar</button>`;
+  if (n < 4) {
+    return back + discard +
+      `<button class="act ghost" data-act="saveDraft"><span class="c">${I.save}</span>Borrador</button>` +
+      `<button class="act" data-act="step" data-to="${n + 1}" ${stepValid(n) ? "" : "disabled"} id="nextbtn"><span class="c">${I.next}</span>Siguiente</button>`;
+  }
+  return back +
+    `<button class="act ghost" data-act="finish" data-send="0" id="savebtn" disabled><span class="c">${I.save}</span>Guardar</button>` +
+    `<button class="act wide" data-act="finish" data-send="1" id="sendbtn" disabled><span class="c">${I.send} Enviar PDF</span>Guarda y comparte</button>`;
+}
+function refreshNext() {
+  const b = document.getElementById("nextbtn");
+  if (b) b.disabled = !stepValid(S.draft.step);
+}
+
+// Paso 1: cliente
+function stepCliente() {
+  const d = S.draft, c = d.cliente;
+  const picked = c.nombre && !S.newClient;
+  return `
+    ${picked ? `
+      <div class="picked"><div class="grow"><b>${esc(c.nombre)}</b><span class="muted num small">${esc(c.tel || c.email || (c.odooId ? "Cliente de Odoo" : "Cliente nuevo"))}</span></div>
+        <span class="check">${I.check}</span></div>
+      <button class="pill ghost" data-act="clearClient">Cambiar cliente</button>` : S.newClient ? `
+      <div class="card"><h3>Cliente nuevo</h3>
+        <label class="field">Nombre o empresa<input id="nc-nombre" value="${esc(c.nombre)}" autocomplete="off" placeholder="Ej. Grupo Scouts 12"></label>
+        <label class="field">WhatsApp / teléfono<input id="nc-tel" value="${esc(c.tel)}" inputmode="tel" autocomplete="off" placeholder="442 000 0000"></label>
+        <label class="field">Correo (opcional)<input id="nc-email" value="${esc(c.email)}" inputmode="email" autocomplete="off"></label>
+        <div class="grid2"><button class="pill ghost" data-act="cancelNew">Buscar en Odoo</button><button class="pill" data-act="useNew">Usar cliente</button></div>
+      </div>` : `
+      <label class="search">${I.search}<input id="cq" placeholder="Nombre o teléfono…" value="${esc(S.clientQuery)}" autocomplete="off" autocapitalize="words"></label>
+      <div class="list" id="clist">${clientResults()}</div>
+      <div class="divider">o</div>
+      <button class="pill soft" data-act="newClient">+ Cliente nuevo</button>`}
+    <div class="facet"><span class="label">Canal</span>
+      <div class="chips wrap">${CANALES.map(([k, v]) => `<button class="chip ${d.canal === k ? "on" : ""}" data-act="canal" data-v="${k}">${v}</button>`).join("")}</div>
+    </div>`;
+}
+function clientResults() {
+  const q = S.clientQuery.trim();
+  const pool = clientPool();
+  if (!q) return pool.length ? `<div class="muted small" style="padding:8px 2px">${S.clientes.length} cliente${S.clientes.length === 1 ? "" : "s"} de Odoo. Escribe para buscar.</div>` : `<div class="empty">Sin clientes descargados todavía.</div>`;
+  const N = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qd = q.replace(/\D/g, ""), qn = N(q);
+  const hits = pool.filter((c) => N(c.nombre).includes(qn) || (qd.length >= 3 && String(c.tel).replace(/\D/g, "").includes(qd))).slice(0, 30);
+  if (!hits.length) return `<div class="empty">Sin coincidencias. Crea un cliente nuevo.</div>`;
+  return hits.map((c, i) => `<button class="li" data-act="pickClient" data-i="${pool.indexOf(c)}"><div class="grow"><div class="t">${esc(c.nombre)}</div><div class="s num">${esc(c.tel || c.email || "")}</div></div></button>`).join("");
+}
+function clientPool() {
+  const local = quotes.all().filter((x) => !x.cliente.odooId).map((x) => ({ id: null, nombre: x.cliente.nombre, tel: x.cliente.tel, email: x.cliente.email }));
+  return [...S.clientes, ...local.filter((l, i, a) => a.findIndex((y) => y.nombre === l.nombre && y.tel === l.tel) === i)];
+}
+
+// Paso 2: productos
+function stepProductos() {
+  const d = S.draft;
+  return `
+    ${d.items.map((it, k) => lineCard(it, k)).join("")}
+    <button class="dashed" data-act="openSheet">${I.plus}<span>${d.items.length ? "Agregar otro producto" : "Configura un nuevo producto"}</span></button>
+    <button class="pill ghost" data-act="addFree">+ Producto libre (fuera de catálogo)</button>
+    ${d.items.length ? `<div class="card" id="mini">${miniTotals()}</div>` : ""}`;
+}
+function lineCard(it, k) {
+  return `
+    <div class="line" data-k="${k}">
+      <input class="name field" data-f="n" value="${esc(it.n)}" aria-label="Descripción" style="border:0;border-bottom:1.5px solid var(--line);background:none;min-height:40px;font-weight:600;font-size:15px;outline:none;width:100%">
+      <div class="row">
+        <div class="stepper">
+          <button data-act="qty" data-d="-1" aria-label="Menos">${I.minus}</button>
+          <input data-f="q" inputmode="numeric" value="${it.q}" aria-label="Cantidad">
+          <button data-act="qty" data-d="1" aria-label="Más">${I.plus}</button>
+        </div>
+        <label class="field">Precio unit.<input class="num" data-f="p" inputmode="decimal" value="${it.p}"></label>
+        <label class="field">Tu costo<input class="num" data-f="c" inputmode="decimal" value="${it.c}"></label>
+      </div>
+      <div class="foot"><button class="link-del" data-act="delLine">Quitar</button>
+        <span class="lf">Ganas ${money(it.q * (it.p - it.c))} · <b class="num">${money(it.q * it.p)}</b></span></div>
+    </div>`;
+}
+function miniTotals() {
+  const t = calc(S.draft);
+  return `<div class="kv"><span>Subtotal</span><span class="num">${money(t.sub)}</span></div>
+    <div class="kv"><span>Tu ganancia</span><span class="num">${money(t.ganancia)} ${marginBadge(t.margen)}</span></div>`;
+}
+const marginBadge = (m) => `<span class="badge ${m >= 45 ? "b-ok" : m >= 30 ? "b-warn" : "b-bad"}">${Math.round(m)}%</span>`;
+
+// Paso 3: condiciones
+function stepCondiciones() {
+  const d = S.draft;
+  return `
+    <div class="card"><h3>Descuento por volumen</h3>
+      <div class="chips wrap">${[0, 5, 10, 15, 20].map((v) => `<button class="chip ${Number(d.desc) === v ? "on" : ""}" data-act="desc" data-v="${v}">${v ? v + "%" : "Sin descuento"}</button>`).join("")}</div>
+    </div>
+    <div class="card">
+      <label class="toggle">Agregar IVA 16%<input type="checkbox" id="iva" ${d.iva ? "checked" : ""}></label>
+      <div class="grid2">
+        <label class="field">Anticipo %<input class="num" id="anticipoPct" inputmode="numeric" value="${esc(d.anticipoPct)}"></label>
+        <label class="field">Vigencia (días)<input class="num" id="vigencia" inputmode="numeric" value="${esc(d.vigencia)}"></label>
+      </div>
+      <label class="field">Tiempo de entrega<input id="entrega" value="${esc(d.entrega)}"></label>
+      <label class="field">Notas para el cliente<textarea id="notas" rows="3" placeholder="Ej. Incluye diseño. Tallas por confirmar.">${esc(d.notas)}</textarea></label>
+    </div>
+    <div class="card" id="mini3">${totalsBlock(d)}</div>`;
+}
+function totalsBlock(q) {
+  const t = calc(q);
+  return `
+    <div class="kv"><span>Subtotal</span><span class="num">${money(t.sub)}</span></div>
+    ${Number(q.desc) ? `<div class="kv"><span>Descuento ${q.desc}%</span><span class="num">−${money(t.desc)}</span></div>` : ""}
+    ${q.iva ? `<div class="kv"><span>IVA 16%</span><span class="num">${money(t.iva)}</span></div>` : ""}
+    <div class="kv big"><span>Total</span><span class="num">${money(t.total)}</span></div>
+    ${q.iva ? "" : `<div class="muted small">Precios sin IVA</div>`}`;
+}
+
+// Paso 4: verificar
+function stepVerificar() {
+  const d = S.draft, t = calc(d);
+  return `
+    <div class="card"><h3>Cliente</h3>
+      <div><b style="font-size:17px">${esc(d.cliente.nombre)}</b><div class="muted small">${esc([d.cliente.tel, d.cliente.email].filter(Boolean).join(" · "))} · ${canalName(d.canal)}</div></div>
+    </div>
+    <div class="card"><h3>Productos</h3>
+      ${d.items.map((i) => `<div class="kv"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
+    </div>
+    <div class="card"><h3>Totales</h3>${totalsBlock(d)}</div>
+    <div class="card"><h3>Pago requerido</h3>
+      <div class="kv"><span>Anticipo ${d.anticipoPct}%</span><span class="num" style="color:var(--ok);font-weight:700">${money(t.anticipo)}</span></div>
+      <div class="kv"><span>Saldo contra entrega</span><span class="num">${money(t.saldo)}</span></div>
+    </div>
+    <div class="card"><h3>Condiciones</h3>
+      <div class="kv"><span>Entrega</span><span>${esc(d.entrega)}</span></div>
+      <div class="kv"><span>Vigencia</span><span>${esc(d.vigencia)} días</span></div>
+      ${d.notas ? `<div class="muted small">${esc(d.notas)}</div>` : ""}
+    </div>
+    <div class="profit"><div><small>Tu ganancia (no sale en el PDF)</small><b>${money(t.ganancia)}</b><small>Costo ${money(t.costo)}</small></div>${marginBadge(t.margen)}</div>
+    <div class="muted small num" id="sealline">Generando sello…</div>`;
+}
+async function prepareSeal() {
+  const d = S.draft;
+  try {
+    if (!d.folio) d.folio = nextFolio(S.user);
+    d.fecha = new Date().toISOString();
+    d.creadoPor = S.user.email;
+    d.sello = await sign(d);
+    saveDraft();
+    const el = document.getElementById("sealline");
+    if (el) el.innerHTML = `${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(d.folio)} · ${formatSeal(d.sello)}`;
+    ["savebtn", "sendbtn"].forEach((id) => { const b = document.getElementById(id); if (b) b.disabled = false; });
+  } catch (e) {
+    const el = document.getElementById("sealline");
+    if (el) el.innerHTML = `<div class="notice">${esc(e.message)}</div>`;
+  }
+}
+
+// ---------- Configurador de producto (hoja inferior) ----------
+const SH = { sel: {}, text: "", pick: null, q: 1 };
+function openSheet() {
+  Object.assign(SH, { sel: {}, text: "", pick: null, q: 1 });
+  drawSheet();
+}
+function closeSheet() { $sheet.innerHTML = ""; }
+function drawSheet(keepFocus) {
+  const pool = filter(S.catalog, SH.sel, SH.text);
+  const vals = facetValues(pool);
+  const results = pool.slice(0, 60);
+  const scroll = $sheet.querySelector(".body")?.scrollTop || 0;
+  $sheet.innerHTML = `
+    <div class="backdrop" data-act="closeSheet"></div>
+    <div class="sheet" role="dialog" aria-label="Configura un producto">
+      <div class="grab"></div>
+      <h2>¡Okie Dokie!</h2>
+      <div class="body">
+        <label class="search">${I.search}<input id="sq" placeholder="Buscar en el catálogo…" value="${esc(SH.text)}" autocomplete="off"></label>
+        ${FACETAS.map(([k, label]) => {
+          const opts = vals[k];
+          if (!opts.length && !SH.sel[k]) return "";
+          const list = SH.sel[k] && !opts.includes(SH.sel[k]) ? [SH.sel[k], ...opts] : opts;
+          return `<div class="facet"><span class="label">${label}</span><div class="chips">${list.map((v) =>
+            `<button class="chip ${SH.sel[k] === v ? "on" : ""}" data-act="facet" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join("")}</div></div>`;
+        }).join("")}
+        <div class="label">${pool.length} producto${pool.length === 1 ? "" : "s"}</div>
+        <div style="display:grid;gap:8px">${results.map((p) => {
+          const m = p.p > 0 ? Math.round(((p.p - p.c) / p.p) * 100) : 0;
+          return `<button class="res ${SH.pick === p.id ? "on" : ""}" data-act="pickProd" data-id="${p.id}"><span class="grow">${esc(p.n)}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
+        }).join("") || `<div class="empty">Nada con esos filtros. Quita un chip o usa "Producto libre".</div>`}</div>
+      </div>
+      <div class="foot">
+        <div class="stepper">
+          <button data-act="sheetQty" data-d="-1" aria-label="Menos">${I.minus}</button>
+          <input id="sheetq" inputmode="numeric" value="${SH.q}" aria-label="Cantidad">
+          <button data-act="sheetQty" data-d="1" aria-label="Más">${I.plus}</button>
+        </div>
+        <button class="pill" data-act="addPicked" ${SH.pick ? "" : "disabled"} style="${SH.pick ? "" : "opacity:.45"}">¡Listo!</button>
+      </div>
+    </div>`;
+  const body = $sheet.querySelector(".body"); if (body) body.scrollTop = scroll;
+  if (keepFocus) { const i = document.getElementById("sq"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+
+// ---------- Lista ----------
+function statusChip(q) {
+  if (q.sync === "error") return `<span class="st err">Error al subir</span>`;
+  if (!q.odoo) return `<span class="st pend">Por subir</span>`;
+  if (q.enviada && !q.odoo.enviada) return `<span class="st pend">${esc(q.odoo.name)} · por marcar</span>`;
+  return `<span class="st ok">${esc(q.odoo.name)} ✓</span>`;
+}
+function renderList() {
+  const all = quotes.all();
+  const N = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qq = N(S.listQuery);
+  const list = all.filter((q) => {
+    if (S.listFilter === "pend" && !needsSync(q)) return false;
+    if (S.listFilter === "env" && !q.enviada) return false;
+    if (S.listFilter === "err" && q.sync !== "error") return false;
+    return !qq || N(q.cliente.nombre + " " + q.folio + " " + (q.odoo ? q.odoo.name : "")).includes(qq);
+  });
+  const d = S.draft;
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="topbar"><img src="/img/logo.png" alt=""><h1>Cotizaciones</h1><span id="pill">${pillHtml()}</span>
+        <button class="icon-btn" data-act="nav" data-to="/ajustes" aria-label="Ajustes">${I.gear}</button></header>
+      <main class="content">
+        ${authBanner()}
+        ${d && (d.cliente.nombre || d.items.length) ? `<button class="qcard" data-act="nav" data-to="/nueva" style="background:var(--accent-soft);border-radius:var(--r);padding:14px">
+          <div class="r1"><span class="folio">Borrador en curso</span><span class="st draft">Paso ${d.step} de 4</span></div>
+          <div class="muted">${esc(d.cliente.nombre || "Sin cliente")} · ${d.items.length} producto(s)</div></button>` : ""}
+        <label class="search">${I.search}<input id="lq" placeholder="Buscar cliente o folio" value="${esc(S.listQuery)}" autocomplete="off"></label>
+        <div class="chips">${[["todas", "Todas"], ["pend", "Por subir"], ["env", "Enviadas"], ["err", "Con error"]].map(([k, v]) =>
+          `<button class="chip ${S.listFilter === k ? "on" : ""}" data-act="lf" data-v="${k}">${v}</button>`).join("")}</div>
+        <div id="qlist">${list.length ? list.map((q) => {
+          const t = calc(q), pzs = q.items.reduce((a, i) => a + Number(i.q), 0);
+          return `<button class="qcard" data-act="nav" data-to="/cotizacion/${q.uuid}">
+            <div class="r1"><span class="folio">${esc(q.folio)}</span>${statusChip(q)}</div>
+            <div class="muted">${esc(q.cliente.nombre)} · ${canalName(q.canal)}</div>
+            <div class="r3"><span class="muted small">${pzs} pza${pzs === 1 ? "" : "s"} · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total">${money(t.total)}</span></div>
+          </button>`;
+        }).join("") : `<div class="empty">${all.length ? "Nada con ese filtro." : "Aún no hay cotizaciones. Toca <b>Nueva</b> para empezar."}</div>`}</div>
+      </main>
+      ${tabbar("lista")}
+    </div>`;
+}
+
+// ---------- Detalle ----------
+function renderDetail(uuid) {
+  const q = quotes.get(uuid);
+  if (!q) return go("/cotizaciones");
+  const t = calc(q);
+  const odooLink = q.odoo && S.user.odooUrl ? `${S.user.odooUrl}/odoo/sales/${q.odoo.id}` : "";
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver">${I.back}</button>
+        <h1 class="num">${esc(q.folio)}</h1><span id="pill">${pillHtml()}</span></header>
+      <main class="content">
+        <div class="card">
+          <div class="kv"><b style="font-size:18px">${esc(q.cliente.nombre)}</b>${statusChip(q)}</div>
+          <div class="muted small">${canalName(q.canal)} · ${new Date(q.fecha).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}${q.enviada ? " · Enviada" : " · Guardada"}</div>
+          ${q.sync === "error" ? `<div class="notice">No subió a Odoo: ${esc(q.syncError)}</div>` : ""}
+        </div>
+        <div class="card"><h3>Productos</h3>
+          ${q.items.map((i) => `<div class="kv"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
+        </div>
+        <div class="card"><h3>Totales</h3>${totalsBlock(q)}</div>
+        <div class="card"><h3>Pago requerido</h3>
+          <div class="kv"><span>Anticipo ${q.anticipoPct}%</span><span class="num" style="color:var(--ok);font-weight:700">${money(t.anticipo)}</span></div>
+          <div class="kv"><span>Saldo</span><span class="num">${money(t.saldo)}</span></div>
+        </div>
+        <div class="profit"><div><small>Tu ganancia</small><b>${money(t.ganancia)}</b></div>${marginBadge(t.margen)}</div>
+        <div class="muted small num">${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(q.folio)} · ${formatSeal(q.sello)}</div>
+        <button class="pill block" data-act="resend" data-uuid="${q.uuid}">${q.enviada ? "Reenviar PDF" : "Enviar PDF"}</button>
+        <div class="grid2">
+          <button class="pill soft" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
+          <button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar</button>
+        </div>
+        ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync">Reintentar subida</button>` : ""}
+        ${odooLink ? `<a class="pill ghost block" style="display:grid;place-items:center;text-decoration:none" href="${odooLink}" target="_blank" rel="noopener">Abrir ${esc(q.odoo.name)} en Odoo</a>` : ""}
+      </main>
+    </div>`;
+}
+
+// ---------- Ajustes ----------
+const CFG_FIELDS = [
+  ["Empresa", [["empresa", "Nombre comercial"], ["titular", "Titular"], ["rfc", "RFC"]]],
+  ["Contacto en el PDF", [["email", "Correo", "email"], ["telefono", "Teléfono", "tel"], ["whatsapp", "WhatsApp", "tel"], ["sitio_web", "Sitio web"],
+    ["instagram", "Instagram (usuario)"], ["facebook", "Facebook (usuario)"], ["tiktok", "TikTok (usuario)"], ["direccion", "Dirección"]]],
+  ["Pago", [["banco", "Banco"], ["clabe", "CLABE"], ["beneficiario", "Beneficiario"], ["anticipo_pct", "Anticipo por defecto %", "numeric"]]],
+  ["Condiciones por defecto", [["entrega_texto", "Tiempo de entrega"], ["vigencia_dias", "Vigencia (días)", "numeric"], ["terminos", "Términos y condiciones", "area"]]],
+  ["Acceso", [["usuarios_permitidos", "Correos con acceso (uno por línea)", "area"]]]
+];
+function renderSettings() {
+  const c = S.cfg || {};
+  const users = c.usuarios_permitidos || "loidaegr@gmail.com\nortegafull87@gmail.com\nkuukum.mx@gmail.com";
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver">${I.back}</button><h1>Ajustes</h1></header>
+      <main class="content">
+        ${!navigator.onLine ? `<div class="notice info">Sin internet: puedes ver los ajustes, pero los cambios se guardan cuando haya conexión.</div>` : ""}
+        <form id="cfgform" class="content" style="padding:0;gap:14px">
+          ${CFG_FIELDS.map(([title, fields]) => `<div class="card"><h3>${title}</h3>${fields.map(([k, label, type]) => {
+            const v = k === "usuarios_permitidos" ? users : c[k] ?? "";
+            return type === "area"
+              ? `<label class="field">${label}<textarea name="${k}" id="cfg-${k}" rows="4">${esc(v)}</textarea></label>`
+              : `<label class="field">${label}<input name="${k}" id="cfg-${k}" value="${esc(v)}" ${type ? `inputmode="${type}"` : ""} autocomplete="off"></label>`;
+          }).join("")}</div>`).join("")}
+          <button class="pill block" type="submit">Guardar ajustes</button>
+        </form>
+        <div class="card"><h3>Datos</h3>
+          <div class="muted small">${S.catalog.length} productos y ${S.clientes.length} clientes guardados en el teléfono.</div>
+          <button class="pill soft block" data-act="reload">Actualizar catálogo y clientes</button>
+          ${S.revisar.length ? `<details><summary class="small" style="min-height:40px;display:flex;align-items:center">${S.revisar.length} productos de Odoo ocultos por precio a revisar</summary>
+            <div class="small muted" style="display:grid;gap:6px;padding-top:6px">${S.revisar.map((p) => `<div>${esc(p.n)} — <span class="num">${money(p.p)}</span></div>`).join("")}</div></details>` : ""}
+        </div>
+        <div class="card"><h3>Seguridad</h3>
+          <button class="pill soft block" data-act="nav" data-to="/verificar">Verificar el sello de una cotización</button>
+          <div class="muted small">Sesión: ${esc(S.user.email)}</div>
+          <button class="pill danger block" data-act="logout">Cerrar sesión</button>
+        </div>
+        <div class="muted small" style="text-align:center">Kuukum Cotiza ${VERSION}</div>
+      </main>
+    </div>`;
+  document.getElementById("cfgform").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(e.target).entries());
+    try { S.cfg = await api("config", { method: "PUT", body }); ls.set("config", S.cfg); toast("Ajustes guardados"); }
+    catch (err) { toast(err.message || "No se pudo guardar", 3500); }
+  });
+}
+
+// ---------- Verificar ----------
+function renderVerify([folio = "", sello = ""] = []) {
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="${S.user ? "/ajustes" : "/login"}" aria-label="Volver">${I.back}</button><h1>Verificar sello</h1></header>
+      <main class="content">
+        <p class="muted" style="margin:0">Escribe el folio y el sello que aparecen al pie de la cotización, o escanea su código QR.</p>
+        <label class="field">Folio<input id="vf" class="num" value="${esc(folio)}" autocapitalize="characters" placeholder="KK-L0012"></label>
+        <label class="field">Sello<input id="vs" class="num" value="${esc(formatSeal(sello))}" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
+        <button class="pill block" data-act="verify">Verificar</button>
+        <div id="vres"></div>
+      </main>
+    </div>`;
+  if (folio && sello && S.user) doVerify();
+  else if (folio && sello) document.getElementById("vres").innerHTML = `<div class="notice info">Entra con una cuenta autorizada para ver el resultado.</div>`;
+}
+async function doVerify() {
+  const folio = document.getElementById("vf").value.trim().toUpperCase();
+  const sello = cleanSeal(document.getElementById("vs").value);
+  const out = document.getElementById("vres");
+  if (!folio || !sello) { out.innerHTML = `<div class="notice">Escribe el folio y el sello.</div>`; return; }
+  const show = (ok, title, snap) => {
+    out.innerHTML = `<div class="verify ${ok ? "ok" : "bad"}"><b style="font-size:18px">${title}</b>${snap ? `
+      <div>${esc(snap.cliente)} · ${new Date(snap.fecha).toLocaleDateString("es-MX")}</div>
+      ${snap.items.map((i) => `<div class="kv small"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
+      <div class="kv big"><span>Total</span><span class="num">${money(snap.total)}</span></div>
+      <div class="small">Compara estos datos contra el PDF que te mostraron. Si algo no coincide, el PDF fue alterado.</div>` : ""}</div>`;
+  };
+  const local = quotes.all().find((q) => q.folio === folio);
+  if (local && local.sello === sello) {
+    const t = calc(local);
+    return show(true, "✅ Auténtica", { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total });
+  }
+  if (!navigator.onLine) { out.innerHTML = `<div class="notice info">Sin internet. Solo puedo verificar cotizaciones hechas en este teléfono.</div>`; return; }
+  try {
+    const r = await api(`verificar?folio=${encodeURIComponent(folio)}&sello=${encodeURIComponent(sello)}`);
+    if (r.estado === "autentica") show(true, "✅ Auténtica" + (r.odoo ? " · " + esc(r.odoo) : ""), r);
+    else if (r.estado === "invalido") show(false, "❌ El sello no corresponde a este folio. La cotización no es auténtica.");
+    else show(false, "⏳ No encuentro ese folio. Puede ser falsa, o aún no se sincroniza desde el teléfono que la hizo.");
+  } catch (e) { out.innerHTML = `<div class="notice">${esc(e.message)}</div>`; }
+}
+
+// ---------- Texto para WhatsApp ----------
+function quoteText(q) {
+  const t = calc(q);
+  return `*Cotización Kuukum ${q.folio}*\nPara: ${q.cliente.nombre}\n\n` +
+    q.items.map((i) => `• ${i.q} × ${i.n} — ${money(i.p)} c/u = ${money(i.q * i.p)}`).join("\n") + "\n\n" +
+    (Number(q.desc) ? `Descuento ${q.desc}%: −${money(t.desc)}\n` : "") + (q.iva ? `IVA 16%: ${money(t.iva)}\n` : "") +
+    `*Total: ${money(t.total)}*${q.iva ? "" : " (sin IVA)"}\nAnticipo ${q.anticipoPct}%: ${money(t.anticipo)}\n` +
+    `Entrega: ${q.entrega} · Vigencia: ${q.vigencia} días` + (q.notas ? `\n${q.notas}` : "") +
+    `\n\nSello: ${formatSeal(q.sello)}`;
+}
+
+// ---------- Acciones ----------
+const ACT = {
+  nav: (el) => go(el.dataset.to),
+  sync: async () => {
+    if (!navigator.onLine) return toast("Sin internet. Se sube solo cuando regrese la conexión.");
+    toast("Sincronizando…");
+    const r = await runSync();
+    if (r && !r.skipped && !r.auth) toast(r.err ? `${r.ok} subidas, ${r.err} con error` : "Todo está en Odoo");
+  },
+  step: (el) => {
+    const to = Number(el.dataset.to), d = S.draft;
+    if (to > d.step && !stepValid(d.step)) return;
+    if (to < 4) d.sello = null;
+    d.step = to; saveDraft(); S.newClient = false; document.getElementById("toast").hidden = true; renderWizard(); window.scrollTo(0, 0);
+  },
+  discard: () => {
+    if (!confirm("¿Descartar esta cotización?")) return;
+    S.draft = null; ls.del("draft"); S.clientQuery = ""; go("/cotizaciones");
+  },
+  saveDraft: () => { saveDraft(); toast("Borrador guardado"); go("/cotizaciones"); },
+  canal: (el) => { S.draft.canal = el.dataset.v; saveDraft(); document.querySelectorAll('[data-act="canal"]').forEach((b) => b.classList.toggle("on", b.dataset.v === S.draft.canal)); },
+  pickClient: (el) => {
+    const c = clientPool()[Number(el.dataset.i)];
+    S.draft.cliente = { odooId: c.id || null, nombre: c.nombre, tel: c.tel || "", email: c.email || "" };
+    saveDraft(); S.clientQuery = ""; renderWizard();
+  },
+  clearClient: () => { S.draft.cliente = { odooId: null, nombre: "", tel: "", email: "" }; saveDraft(); renderWizard(); },
+  newClient: () => { S.newClient = true; S.draft.cliente = { odooId: null, nombre: S.clientQuery.replace(/[\d\s+()-]{6,}/, "").trim(), tel: (S.clientQuery.match(/[\d\s+()-]{6,}/) || [""])[0].trim(), email: "" }; renderWizard(); document.getElementById("nc-nombre")?.focus(); },
+  cancelNew: () => { S.newClient = false; S.draft.cliente = { odooId: null, nombre: "", tel: "", email: "" }; saveDraft(); renderWizard(); },
+  useNew: () => {
+    const nombre = document.getElementById("nc-nombre").value.trim();
+    if (!nombre) return toast("Escribe el nombre del cliente");
+    S.draft.cliente = { odooId: null, nombre, tel: document.getElementById("nc-tel").value.trim(), email: document.getElementById("nc-email").value.trim() };
+    S.newClient = false; saveDraft(); renderWizard();
+  },
+  openSheet: () => { if (!S.catalog.length) return toast("Catálogo vacío. Conéctate para descargarlo, o usa Producto libre.", 3500); openSheet(); },
+  closeSheet: () => closeSheet(),
+  facet: (el) => { const { k, v } = el.dataset; SH.sel[k] = SH.sel[k] === v ? undefined : v; SH.pick = null; drawSheet(); },
+  pickProd: (el) => { SH.pick = Number(el.dataset.id); drawSheet(); },
+  sheetQty: (el) => { SH.q = Math.max(1, (Number(document.getElementById("sheetq").value) || 1) + Number(el.dataset.d)); document.getElementById("sheetq").value = SH.q; },
+  addPicked: () => {
+    const p = S.catalog.find((x) => x.id === SH.pick); if (!p) return;
+    SH.q = Math.max(1, Number(document.getElementById("sheetq").value) || 1);
+    const ex = S.draft.items.find((i) => i.productId === p.id);
+    if (ex) ex.q += SH.q; else S.draft.items.push({ productId: p.id, n: p.n, q: SH.q, p: p.p, c: p.c });
+    saveDraft(); closeSheet(); renderWizard(); toast(`Agregado: ${SH.q} × ${p.n.split(".")[0]}`);
+  },
+  addFree: () => {
+    S.draft.items.push({ productId: null, n: "Producto personalizado", q: 1, p: 0, c: 0 });
+    saveDraft(); renderWizard();
+    const names = document.querySelectorAll(".line .name"); const last = names[names.length - 1];
+    if (last) { last.focus(); last.select(); }
+  },
+  qty: (el) => {
+    const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
+    it.q = Math.max(1, Number(it.q) + Number(el.dataset.d));
+    el.closest(".line").querySelector('[data-f="q"]').value = it.q;
+    updateLine(k); saveDraft();
+  },
+  delLine: (el) => { S.draft.items.splice(Number(el.closest(".line").dataset.k), 1); saveDraft(); renderWizard(); },
+  desc: (el) => { S.draft.desc = Number(el.dataset.v); saveDraft(); document.querySelectorAll('[data-act="desc"]').forEach((b) => b.classList.toggle("on", Number(b.dataset.v) === S.draft.desc)); updateMini3(); },
+  finish: async (el) => {
+    const d = S.draft;
+    if (!d.sello) return toast("Espera a que se genere el sello");
+    const send = el.dataset.send === "1";
+    const q = { ...d, estado: "guardada", enviada: false, sync: "pendiente", step: undefined };
+    quotes.put(q); S.draft = null; ls.del("draft"); S.clientQuery = "";
+    if (send) {
+      const res = await sharePdf(q, S.cfg);            // se llama dentro del toque: requisito de iOS
+      if (res !== "cancelled") { q.enviada = true; q.estado = "enviada"; quotes.put(q); }
+      else toast("Guardada sin enviar. Puedes enviarla desde la lista.");
+    } else toast("Cotización guardada");
+    go("/cotizacion/" + q.uuid);
+    runSync();
+  },
+  resend: async (el) => {
+    const q = quotes.get(el.dataset.uuid);
+    const res = await sharePdf(q, S.cfg);
+    if (res !== "cancelled" && !q.enviada) { q.enviada = true; q.estado = "enviada"; quotes.put(q); render(); runSync(); }
+  },
+  text: async (el) => {
+    const txt = quoteText(quotes.get(el.dataset.uuid));
+    if (navigator.share) { try { await navigator.share({ text: txt }); return; } catch (e) { if (e.name === "AbortError") return; } }
+    try { await navigator.clipboard.writeText(txt); toast("Texto copiado. Pégalo en WhatsApp."); } catch { toast("No se pudo copiar"); }
+  },
+  dup: (el) => {
+    const q = quotes.get(el.dataset.uuid);
+    if (S.draft && (S.draft.cliente.nombre || S.draft.items.length) && !confirm("Ya tienes un borrador en curso. ¿Reemplazarlo?")) return;
+    S.draft = newDraft({ cliente: { ...q.cliente }, canal: q.canal, items: q.items.map((i) => ({ ...i })), desc: q.desc, iva: q.iva,
+      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2 });
+    saveDraft(); go("/nueva");
+  },
+  lf: (el) => { S.listFilter = el.dataset.v; renderList(); },
+  reload: async () => { if (!navigator.onLine) return toast("Sin internet"); toast("Actualizando…"); await refresh(); toast("Catálogo y clientes al día"); if (route().startsWith("/ajustes")) renderSettings(); },
+  verify: () => doVerify(),
+  logout: async () => {
+    const pend = quotes.all().filter(needsSync).length;
+    if (!confirm(pend ? `Hay ${pend} cotización(es) sin subir a Odoo. Si cierras sesión se quedan en este teléfono hasta que vuelvas a entrar. ¿Cerrar sesión?` : "¿Cerrar sesión?")) return;
+    try { await api("auth/logout", { method: "POST" }); } catch {}
+    await clearKeys(); ls.del("user"); S.user = null; go("/login");
+  }
+};
+
+function updateLine(k) {
+  const it = S.draft.items[k];
+  const card = document.querySelector(`.line[data-k="${k}"] .lf`);
+  if (card) card.innerHTML = `Ganas ${money(it.q * (it.p - it.c))} · <b class="num">${money(it.q * it.p)}</b>`;
+  const mini = document.getElementById("mini"); if (mini) mini.innerHTML = miniTotals();
+  refreshNext();
+}
+function updateMini3() { const m = document.getElementById("mini3"); if (m) m.innerHTML = totalsBlock(S.draft); }
+
+// Delegación de eventos
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el || el.disabled) return;
+  const fn = ACT[el.dataset.act];
+  if (fn) { e.preventDefault(); fn(el, e); }
+});
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.id === "cq") { S.clientQuery = t.value; document.getElementById("clist").innerHTML = clientResults(); return; }
+  if (t.id === "sq") { SH.text = t.value; SH.pick = null; drawSheet(true); return; }
+  if (t.id === "lq") { S.listQuery = t.value; const pos = t.selectionStart; renderList(); const n = document.getElementById("lq"); n.focus(); n.setSelectionRange(pos, pos); return; }
+  if (t.id === "sheetq") { SH.q = Math.max(1, Number(t.value) || 1); return; }
+  if (!S.draft) return;
+  const line = t.closest(".line");
+  if (line && t.dataset.f) {
+    const k = Number(line.dataset.k), it = S.draft.items[k];
+    it[t.dataset.f] = t.dataset.f === "n" ? t.value : r2(parseFloat(String(t.value).replace(",", ".")) || 0);
+    saveDraft(); updateLine(k); return;
+  }
+  if (["anticipoPct", "vigencia", "entrega", "notas"].includes(t.id)) {
+    S.draft[t.id] = ["anticipoPct", "vigencia"].includes(t.id) ? Number(t.value) || 0 : t.value;
+    saveDraft(); updateMini3(); refreshNext();
+  }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.id === "iva" && S.draft) { S.draft.iva = e.target.checked; saveDraft(); updateMini3(); }
+});
+
+boot();

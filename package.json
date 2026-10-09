@@ -1,0 +1,10 @@
+{
+  "name": "kuukum-cotiza",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev public",
+    "deploy": "wrangler pages deploy public --project-name kuukum-cotiza --branch main"
+  },
+  "devDependencies": { "wrangler": "^4.40.0" }
+}
