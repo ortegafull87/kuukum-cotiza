@@ -13,7 +13,7 @@ ODOO_DB = ""
 # y pega aquí el id que te devuelve.
 [[kv_namespaces]]
 binding = "KK"
-id = "REEMPLAZA_CON_EL_ID_DEL_KV"
+id = "b37bc3ef3eda4c3baedd14643aecdd50"
 
 # Secretos (no van en este archivo):
 #   npx wrangler pages secret put ODOO_API_KEY
