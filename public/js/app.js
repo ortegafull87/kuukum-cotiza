@@ -1,12 +1,14 @@
 import { calc, money, r2 } from "./calc.js";
 import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js";
 import { enrich, filter, facetValues, FACETAS } from "./catalog.js";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox } from "./store.js";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js";
 import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js";
+import { openScanner, closeScanner } from "./scanner.js";
+import { collectDiagnostics, diagText } from "./diagnostics.js";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
-const APP_VERSION = "v0.2";
-const VERSION = APP_VERSION + " · 2026-10-09";
+// Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
+const APP_VERSION = "0.3.0";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -29,6 +31,7 @@ const I = {
   new: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M12 9v6M9 12h6"/></svg>',
   sync: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>',
   lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg>',
+  qr: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18v2M18 18h2v2"/></svg>',
   shield: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'
 };
 
@@ -41,7 +44,8 @@ const S = {
   clientes: (ls.get("clientes", null) || { clientes: [] }).clientes,
   draft: ls.get("draft", null),
   authExpired: false,
-  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false, prevRoute: ""
+  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false, prevRoute: "",
+  updateTo: null, sending: false
 };
 const $app = document.getElementById("app");
 const $sheet = document.getElementById("sheet-root");
@@ -53,13 +57,36 @@ function toast(msg, ms = 2400) {
   t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), ms);
 }
+// Botón con estado de carga: evita el doble toque, muestra spinner + texto y lo restaura al terminar.
+async function withLoading(btn, fn, label = "Cargando…") {
+  if (btn && btn.dataset.loading) return;
+  let html = "";
+  if (btn) {
+    html = btn.innerHTML;
+    btn.dataset.loading = "1"; btn.disabled = true; btn.classList.add("loading"); btn.setAttribute("aria-busy", "true");
+    const sp = `<span class="spinner" aria-hidden="true"></span>`;
+    btn.innerHTML = btn.classList.contains("act") ? `<span class="c">${sp}</span>${esc(label)}` : `${sp}<span>${esc(label)}</span>`;
+  }
+  try { return await fn(); }
+  catch (e) { logError({ tipo: "accion", mensaje: e.message || String(e) }); toast(e.message || "Algo falló", 3500); }
+  finally {
+    if (btn) { btn.innerHTML = html; delete btn.dataset.loading; btn.disabled = false; btn.classList.remove("loading"); btn.removeAttribute("aria-busy"); }
+  }
+}
+
 const route = () => (location.hash || "#/").slice(1);
 const go = (h) => { if (location.hash === "#" + h) render(); else location.hash = h; };
 
 // ---------- Arranque ----------
 async function boot() {
   preloadLogo().catch(() => {});
+  window.addEventListener("error", (e) => logError({ tipo: "js", mensaje: e.message, origen: `${(e.filename || "").replace(location.origin, "")}:${e.lineno}:${e.colno}` }));
+  window.addEventListener("unhandledrejection", (e) => logError({ tipo: "promesa", mensaje: (e.reason && (e.reason.message || String(e.reason))) || "rechazo sin motivo" }));
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  // Actualizaciones: al abrir, al volver a primer plano (iOS no recarga la app instalada) y cada 30 min.
+  checkUpdate();
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+  setInterval(checkUpdate, 30 * 60000);
   window.addEventListener("hashchange", render);
   window.addEventListener("online", () => { refresh(); renderPill(); });
   window.addEventListener("offline", renderPill);
@@ -68,6 +95,39 @@ async function boot() {
   if (!hadUser && navigator.onLine && !route().startsWith("/login")) await refresh();
   render();
   if (hadUser) refresh();
+}
+
+// ---------- Actualizaciones ----------
+async function checkUpdate() {
+  if (!navigator.onLine) return null;
+  try {
+    const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (reg) reg.update().catch(() => {});
+    const v = (await (await fetch("/version.json", { cache: "no-store" })).json()).version;
+    S.updateTo = v && v !== APP_VERSION ? v : null;
+    renderBanner();
+    return v;
+  } catch { return null; }
+}
+function renderBanner() {
+  const el = document.getElementById("update-banner");
+  if (!el) return;
+  const show = !!S.updateTo && !S.sending;        // no interrumpir un envío del Paso 4
+  el.hidden = !show;
+  document.body.classList.toggle("has-update", show);
+  if (show) el.innerHTML = `<span>Hay una versión nueva de Cotiza App</span><button class="pill" data-act="applyUpdate">Actualizar</button>`;
+}
+// Si hay un service worker en espera, se activa y luego se recarga; si no, solo se recarga.
+async function applyUpdate() {
+  const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
+  if (reg && reg.waiting) {
+    await new Promise((res) => {
+      navigator.serviceWorker.addEventListener("controllerchange", res, { once: true });
+      reg.waiting.postMessage("SKIP_WAITING");
+      setTimeout(res, 4000);
+    });
+  }
+  location.reload();
 }
 
 async function refresh() {
@@ -105,11 +165,11 @@ async function runSync() {
 // ---------- Render principal ----------
 function render() {
   const r = route();
-  closeSheet();
+  closeSheet(); closeScanner();
   if (r.startsWith("/login") || (!S.user && !r.startsWith("/verificar"))) return renderLogin();
   if (!S.cfg) S.cfg = {};
   if (r.startsWith("/reportar")) return renderReport();
-  S.prevRoute = r;
+  S.prevRoute = r; RP.hecho = null;
   if (r.startsWith("/nueva")) return renderWizard();
   if (r.startsWith("/cotizacion/")) return renderDetail(decodeURIComponent(r.split("/")[2]));
   if (r.startsWith("/ajustes")) return renderSettings();
@@ -494,7 +554,7 @@ function renderDetail(uuid) {
           <button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar</button>
         </div>
         <button class="pill soft block" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
-        ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync">Reintentar subida</button>` : ""}
+        ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync" data-label="Subiendo…">Reintentar subida</button>` : ""}
         ${odooLink ? `<a class="pill ghost block" style="display:grid;place-items:center;text-decoration:none" href="${odooLink}" target="_blank" rel="noopener">Abrir ${esc(q.odoo.name)} en Odoo</a>` : ""}
       </main>
     </div>`;
@@ -538,7 +598,7 @@ function renderSettings() {
               : `<label class="field">${label}<input name="${k}" id="cfg-${k}" value="${esc(v)}" ${type ? `inputmode="${type}"` : ""} autocomplete="off"></label>`) +
               (hint ? `<div class="muted small">${hint}</div>` : "");
           }).join("")}</div>`).join("")}
-          <button class="pill block" type="submit">Guardar ajustes</button>
+          <button class="pill block" type="submit" id="cfgsave">Guardar ajustes</button>
         </form>
         <div class="card"><h3>Datos</h3>
           <div class="muted small">${S.catalog.length} productos y ${S.clientes.length} clientes guardados en el teléfono.</div>
@@ -556,31 +616,40 @@ function renderSettings() {
           <div class="muted small">Sesión: ${esc(S.user.email)}</div>
           <button class="pill danger block" data-act="logout">Cerrar sesión</button>
         </div>
-        <div class="muted small" style="text-align:center">Cotiza App ${VERSION}</div>
+        <div class="card"><h3>Versión</h3>
+          <div class="kv"><span>Cotiza App</span><span class="num">${APP_VERSION}</span></div>
+          ${S.updateTo ? `<div class="muted small">Disponible: ${esc(S.updateTo)}</div>` : ""}
+          <button class="pill soft block" data-act="checkUpdate">Buscar actualización</button>
+        </div>
       </main>
     </div>`;
   document.getElementById("cfgform").addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target).entries());
-    try { S.cfg = await api("config", { method: "PUT", body }); ls.set("config", S.cfg); toast("Ajustes guardados"); }
-    catch (err) { toast(err.message || "No se pudo guardar", 3500); }
+    await withLoading(document.getElementById("cfgsave"), async () => {
+      S.cfg = await api("config", { method: "PUT", body }); ls.set("config", S.cfg); toast("Ajustes guardados");
+    }, "Guardando…");
   });
 }
 
 // ---------- Verificar ----------
 function renderVerify([folio = "", sello = ""] = []) {
+  const prefill = !!(folio || sello);
   $app.innerHTML = `
     <div class="screen">
       <header class="topbar"><button class="icon-btn" data-act="nav" data-to="${S.user ? "/ajustes" : "/login"}" aria-label="Volver">${I.back}</button><h1>Verificar sello</h1></header>
       <main class="content">
-        <p class="muted" style="margin:0">Escribe el folio y el sello que aparecen al pie de la cotización, o escanea su código QR.</p>
-        <label class="field">Folio<input id="vf" class="num" value="${esc(folio)}" autocapitalize="characters" placeholder="KK-L0012"></label>
-        <label class="field">Sello<input id="vs" class="num" value="${esc(formatSeal(sello))}" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
-        <button class="pill block" data-act="verify">Verificar</button>
+        <p class="muted" style="margin:0">Escanea el código QR que aparece al pie de la cotización.</p>
+        <button class="pill block big" data-act="scan">${I.qr}<span>Escanear QR</span></button>
         <div id="vres"></div>
+        <details class="card" id="vmanual" ${prefill ? "open" : ""}><summary>Ingresar manualmente</summary>
+          <label class="field">Folio<input id="vf" class="num" value="${esc(folio)}" autocapitalize="characters" placeholder="KK-L0012"></label>
+          <label class="field">Sello<input id="vs" class="num" value="${esc(formatSeal(sello))}" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
+          <button class="pill block" data-act="verify" id="vbtn">Verificar</button>
+        </details>
       </main>
     </div>`;
-  if (folio && sello && S.user) doVerify();
+  if (folio && sello && S.user) withLoading(document.getElementById("vbtn"), doVerify, "Verificando…");
   else if (folio && sello) document.getElementById("vres").innerHTML = `<div class="notice info">Entra con una cuenta autorizada para ver el resultado.</div>`;
 }
 async function doVerify() {
@@ -632,11 +701,13 @@ function quoteText(q) {
 // ---------- Acciones ----------
 const ACT = {
   nav: (el) => go(el.dataset.to),
-  sync: async () => {
+  sync: (el) => {
     if (!navigator.onLine) return toast("Sin internet. Se sube solo cuando regrese la conexión.");
-    toast("Sincronizando…");
-    const r = await runSync();
-    if (r && !r.skipped && !r.auth) toast(r.err ? `${r.ok} subidas, ${r.err} con error` : "Todo está en Odoo");
+    return withLoading(el, async () => {
+      const r = await runSync();
+      if (r && r.skipped) toast("Ya se está sincronizando…");
+      else if (r && !r.auth) toast(r.err ? `${r.ok} subidas, ${r.err} con error` : "Todo está en Odoo");
+    }, el.dataset.label || "Subiendo…");
   },
   step: (el) => {
     const to = Number(el.dataset.to), d = S.draft;
@@ -691,10 +762,11 @@ const ACT = {
   },
   delLine: (el) => { S.draft.items.splice(Number(el.closest(".line").dataset.k), 1); saveDraft(); renderWizard(); },
   desc: (el) => { S.draft.desc = Number(el.dataset.v); saveDraft(); document.querySelectorAll('[data-act="desc"]').forEach((b) => b.classList.toggle("on", Number(b.dataset.v) === S.draft.desc)); updateMini3(); },
-  finish: async (el) => {
+  finish: (el) => {
     const d = S.draft;
     if (!d) return;                                     // doble toque: ya se guardó
     if (!d.sello) return toast("Espera a que se genere el sello");
+    if (el.dataset.loading) return;
     const send = el.dataset.send === "1";
     const q = { ...d, estado: "guardada", enviada: false, sync: "pendiente", syncError: "", step: undefined, editOf: undefined, porCorreo: undefined };
     const orig = d.editOf && quotes.get(d.editOf);
@@ -707,17 +779,28 @@ const ACT = {
     }
     if (d.porCorreo && esCautivo(d.cliente)) q.correoPend = { force: false };
     quotes.put(q); S.draft = null; ls.del("draft"); S.clientQuery = "";
-    if (send) {
-      const res = await sharePdf(q, S.cfg);            // se llama dentro del toque: requisito de iOS
-      if (res !== "cancelled") { q.enviada = true; q.estado = "enviada"; quotes.put(q); }
-      else toast("Guardada sin enviar. Puedes enviarla desde la lista.");
-    } else toast(q.correoPend ? "Guardada. Se manda por correo al subir a Odoo." : orig ? `Revisión ${revOf(q)} guardada` : "Cotización guardada");
-    go("/cotizacion/" + q.uuid);
-    runSync();
+    // iOS: la hoja de compartir se abre aquí, dentro del toque; el spinner va después.
+    const sharing = send ? sharePdf(q, S.cfg) : null;
+    S.sending = true; renderBanner();
+    document.querySelectorAll('[data-act="finish"]').forEach((b) => { if (b !== el) b.disabled = true; });
+    return withLoading(el, async () => {
+      try {
+        if (sharing) {
+          const res = await sharing;
+          if (res !== "cancelled") { q.enviada = true; q.estado = "enviada"; quotes.put(q); }
+          else toast("Guardada sin enviar. Puedes enviarla desde la lista.");
+        } else toast(q.correoPend ? "Guardada. Se manda por correo al subir a Odoo." : orig ? `Revisión ${revOf(q)} guardada` : "Cotización guardada");
+      } catch (e) { logError({ tipo: "compartir", mensaje: e.message }); toast("No se pudo compartir el PDF. La cotización sí quedó guardada.", 3500); }
+      finally { S.sending = false; renderBanner(); }
+      go("/cotizacion/" + q.uuid);
+      runSync();
+    }, send ? "Enviando…" : "Guardando…");
   },
   resend: async (el) => {
     const q = quotes.get(el.dataset.uuid);
-    const res = await sharePdf(q, S.cfg);
+    let res;
+    try { res = await sharePdf(q, S.cfg); }
+    catch (e) { logError({ tipo: "pdf", mensaje: e.message }); return toast("No se pudo generar el PDF: " + e.message, 3500); }
     if (res !== "cancelled" && !q.enviada) { q.enviada = true; q.estado = "enviada"; quotes.put(q); render(); runSync(); }
   },
   text: async (el) => {
@@ -756,46 +839,68 @@ const ACT = {
       ? `Ya se envió por correo el ${new Date(q.correo.fecha).toLocaleDateString("es-MX")} a ${q.correo.email}. ¿Enviarla otra vez?`
       : `¿Enviar ${folioDe(q)} por correo a ${email}?`;
     if (!confirm(msg)) return;
-    q.correoPend = { force: !!ya }; q.correoError = ""; quotes.put(q); render();
-    if (!navigator.onLine) return toast("Sin internet. El correo se manda al volver la conexión.", 3500);
-    toast("Enviando correo…");
-    await runSync();
-    const cur = quotes.get(q.uuid);
-    toast(cur.correoError ? cur.correoError : cur.correoPend ? "El correo quedó en cola." : "Correo enviado a " + email, 3500);
+    q.correoPend = { force: !!ya }; q.correoError = ""; quotes.put(q);
+    if (!navigator.onLine) { render(); return toast("Sin internet. El correo se manda al volver la conexión.", 3500); }
+    await withLoading(el, async () => {
+      await runSync();
+      const cur = quotes.get(q.uuid);
+      toast(cur.correoError ? cur.correoError : cur.correoPend ? "El correo quedó en cola." : "Correo enviado a " + email, 3500);
+    }, "Enviando…");
     if (route() === "/cotizacion/" + q.uuid) render();
   },
+  reportDone: () => { RP.hecho = null; go("/ajustes"); },
   addFoto: () => document.getElementById("rp-fotos")?.click(),
   rmFoto: (el) => { RP.fotos.splice(Number(el.dataset.i), 1); drawThumbs(); },
-  sendReport: () => sendReport(),
+  sendReport: (el) => withLoading(el, sendReport, "Enviando…"),
+  scan: () => openScanner({
+    onCode: ({ folio, sello }) => {
+      const m = document.getElementById("vmanual"); if (m) m.open = true;
+      document.getElementById("vf").value = folio;
+      document.getElementById("vs").value = formatSeal(sello);
+      if (!S.user) { document.getElementById("vres").innerHTML = `<div class="notice info">Entra con una cuenta autorizada para ver el resultado.</div>`; return; }
+      withLoading(document.getElementById("vbtn"), doVerify, "Verificando…");
+    },
+    onManual: () => { const m = document.getElementById("vmanual"); if (m) m.open = true; }
+  }),
+  applyUpdate: (el) => withLoading(el, applyUpdate, "Actualizando…"),
+  checkUpdate: (el) => withLoading(el, async () => {
+    if (!navigator.onLine) return toast("Sin internet");
+    const v = await checkUpdate();
+    if (!v) toast("No se pudo revisar. Intenta otra vez.");
+    else if (v === APP_VERSION) toast(`Ya tienes la última versión (${APP_VERSION})`);
+    else renderSettings();
+  }, "Buscando…"),
   lf: (el) => { S.listFilter = el.dataset.v; renderList(); },
-  reload: async () => { if (!navigator.onLine) return toast("Sin internet"); toast("Actualizando…"); await refresh(); toast("Catálogo y clientes al día"); if (route().startsWith("/ajustes")) renderSettings(); },
-  verify: () => doVerify(),
-  logout: async () => {
+  reload: (el) => {
+    if (!navigator.onLine) return toast("Sin internet");
+    return withLoading(el, async () => { await refresh(); toast("Catálogo y clientes al día"); if (route().startsWith("/ajustes")) renderSettings(); }, "Actualizando…");
+  },
+  verify: (el) => withLoading(el, doVerify, "Verificando…"),
+  logout: async (el) => {
     const pend = quotes.all().filter(needsSync).length;
     if (!confirm(pend ? `Hay ${pend} cotización(es) sin subir a Odoo. Se quedan guardadas en este teléfono y se suben cuando vuelvas a entrar.\n\n¿Cerrar sesión?` : "¿Cerrar sesión en este teléfono?")) return;
-    try { await api("auth/logout", { method: "POST" }); } catch {}
+    await withLoading(el, async () => { try { await api("auth/logout", { method: "POST" }); } catch {} }, "Cerrando…");
     await clearKeys(); ls.del("user"); S.user = null; go("/login");
   }
 };
 
 // ---------- Reportar un problema ----------
-const RP = { pantalla: "", titulo: "", descripcion: "", fotos: [] };
+const RP = { pantalla: "", titulo: "", descripcion: "", fotos: [], hecho: null };
 const MAX_FOTOS = 5;
-function diagnostico() {
-  return {
-    version: APP_VERSION,
-    usuario: (S.user && S.user.email) || "",
-    userAgent: navigator.userAgent,
-    conexion: navigator.onLine ? "online" : "offline",
-    appInstalada: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
-    porSubir: quotes.all().filter(needsSync).length,
-    erroresSync: ls.get("syncErrors", []),
-    borrador: S.draft ? `${S.draft.folio ? folioDe(S.draft) : "sin folio"} · paso ${S.draft.step}` : "ninguno",
-    pantallaPrevia: S.prevRoute || ""
-  };
-}
+const diagCtx = () => ({ version: APP_VERSION, user: S.user, ruta: S.prevRoute || route(), draft: S.draft });
 function renderReport() {
-  const dg = diagnostico();
+  if (RP.hecho) {
+    $app.innerHTML = `
+      <div class="screen">
+        <header class="topbar"><h1>Reportar un problema</h1></header>
+        <main class="content">
+          <div class="verify ok"><b style="font-size:18px">${RP.hecho.id ? `Reporte ${esc(RP.hecho.id)} enviado. Gracias.` : "Guardado. Se enviará cuando haya internet."}</b>
+            <div class="small">${RP.hecho.id ? "Lo revisamos y te contestamos por correo." : "No tienes que hacer nada más: sale solo al volver la conexión."}</div></div>
+          <button class="pill block" data-act="reportDone">Volver a Ajustes</button>
+        </main>
+      </div>`;
+    return;
+  }
   $app.innerHTML = `
     <div class="screen">
       <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/ajustes" aria-label="Volver">${I.back}</button><h1>Reportar un problema</h1></header>
@@ -811,11 +916,12 @@ function renderReport() {
           <button class="pill soft block" data-act="addFoto" id="rp-add">Agregar fotos</button>
         </div>
         <details class="card"><summary class="small">Diagnóstico que se envía con el reporte</summary>
-          <pre class="diag">${esc(Object.entries(dg).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n"))}</pre></details>
+          <pre class="diag" id="rp-diag">Recolectando…</pre></details>
         <button class="pill block" data-act="sendReport" id="rp-send">Enviar reporte</button>
       </main>
     </div>`;
   drawThumbs();
+  collectDiagnostics(diagCtx()).then((d) => { const el = document.getElementById("rp-diag"); if (el) el.textContent = diagText(d); });
 }
 function drawThumbs() {
   const box = document.getElementById("rp-thumbs"); if (!box) return;
@@ -848,22 +954,22 @@ async function addFotos(files) {
 async function sendReport() {
   const titulo = RP.titulo.trim(), descripcion = RP.descripcion.trim();
   if (!RP.pantalla || !titulo || !descripcion) return toast("Completa la pantalla, el nombre del error y la descripción.", 3000);
+  // El diagnóstico se recolecta al enviar, con los valores de ese momento.
   const body = {
-    clientId: crypto.randomUUID(), pantalla: RP.pantalla, titulo: titulo.slice(0, 120), descripcion, diag: diagnostico(),
+    clientId: crypto.randomUUID(), pantalla: RP.pantalla, titulo: titulo.slice(0, 120), descripcion, diag: await collectDiagnostics(diagCtx()),
     fotos: RP.fotos.map((f) => ({ name: f.name, mimetype: "image/jpeg", data: f.url.split(",")[1] }))
   };
-  const btn = document.getElementById("rp-send"); if (btn) btn.disabled = true;
-  const done = (msg) => { Object.assign(RP, { pantalla: "", titulo: "", descripcion: "", fotos: [] }); go("/ajustes"); toast(msg, 3500); };
+  const done = (id) => { Object.assign(RP, { pantalla: "", titulo: "", descripcion: "", fotos: [], hecho: { id } }); renderReport(); };
   if (navigator.onLine) {
-    try { const r = await api("reportes", { method: "POST", body }); return done(`Reporte ${r.id} enviado. Gracias.`); }
+    try { const r = await api("reportes", { method: "POST", body }); return done(r.id); }
     catch (e) {
       // Errores de datos (400) se muestran; sin red, sin sesión o error de Odoo: a la cola.
-      if (!(e instanceof AuthError) && e.status && e.status < 500) { if (btn) btn.disabled = false; return toast(e.message, 3500); }
+      if (!(e instanceof AuthError) && e.status && e.status < 500) throw e;
     }
   }
   try { await outbox.put(body); }
-  catch { if (btn) btn.disabled = false; return toast("No se pudo guardar el reporte en el teléfono.", 3500); }
-  done(navigator.onLine ? "No se pudo enviar ahora. Se reintenta solo." : "Sin internet. El reporte se enviará al volver la conexión.");
+  catch { throw new Error("No se pudo guardar el reporte en el teléfono."); }
+  done(null);
 }
 
 function updateLine(k) {

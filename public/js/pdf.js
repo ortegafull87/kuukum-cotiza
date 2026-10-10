@@ -1,6 +1,7 @@
 // PDF de la cotización (jsPDF + autotable + qrcode-generator, todo local para funcionar offline).
 import { calc, money } from "./calc.js";
-import { formatSeal, folioVisible } from "./canonical.js";
+import { formatSeal, folioVisible, cleanSeal } from "./canonical.js";
+import { logError } from "./store.js";
 
 let logoData = null;
 const ICONOS = ["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"];
@@ -130,17 +131,18 @@ export function buildPdf(q, cfg) {
   doc.setFont("courier", "bold"); doc.setFontSize(8.5); doc.setTextColor(...navy);
   doc.text(`Sello de autenticidad: ${folioVisible(q.folio, q.rev)} · ${formatSeal(q.sello)}`, M, Math.max(fy + 2, H - 22));
 
-  // QR que abre la pantalla Verificar
+  // QR de texto plano (no es un enlace): solo Cotiza App lo interpreta, así el cliente no cae en el login de la app.
   try {
-    const url = `${location.origin}/#/verificar/${encodeURIComponent(q.folio)}/${q.sello}`;
-    const qr = window.qrcode(0, "M"); qr.addData(url); qr.make();
+    const qr = window.qrcode(0, "M"); qr.addData(qrText(q)); qr.make();
     const n = qr.getModuleCount(), cell = qrSize / n, x0 = W - M - qrSize, y0 = footTop + 10;
     doc.setFillColor(0, 44, 55);
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) doc.rect(x0 + c * cell, y0 + r * cell, cell + 0.2, cell + 0.2, "F");
-  } catch {}
+  } catch (e) { logError({ tipo: "pdf", mensaje: "QR: " + e.message }); }
 
   return doc;
 }
+
+export const qrText = (q) => `KUUKUM|V1|${folioVisible(q.folio, q.rev)}|${cleanSeal(q.sello)}`;
 
 export function pdfName(q) {
   return `Cotizacion_${folioVisible(q.folio, q.rev)}_${(q.cliente.nombre || "cliente").replace(/[^\wáéíóúñÁÉÍÓÚÑ]+/g, "_")}.pdf`;
@@ -157,7 +159,7 @@ export async function sharePdf(q, cfg) {
   const file = new File([doc.output("blob")], pdfName(q), { type: "application/pdf" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], title: "Cotización " + folioVisible(q.folio, q.rev) }); return "shared"; }
-    catch (e) { if (e.name === "AbortError") return "cancelled"; }
+    catch (e) { if (e.name === "AbortError") return "cancelled"; logError({ tipo: "compartir", mensaje: `${e.name}: ${e.message}` }); }
   }
   doc.save(pdfName(q));
   return "downloaded";

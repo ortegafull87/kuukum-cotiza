@@ -1,4 +1,6 @@
-# Kuukum Cotiza (v0.2)
+# Kuukum Cotiza (v0.3)
+
+Especificaciones: [`docs/SPEC-v0.2.md`](docs/SPEC-v0.2.md), [`docs/SPEC-v0.3.md`](docs/SPEC-v0.3.md).
 
 App web instalable (PWA) para cotizar desde el teléfono, con o sin internet. Sincroniza clientes y cotizaciones con Odoo y comparte el PDF por WhatsApp.
 
@@ -50,12 +52,14 @@ Primera prueba recomendada: entrar con Google **desde el ícono instalado**. iOS
   - Se marca como **Enviada** cuando se comparte el PDF.
   - Los clientes nuevos se buscan por teléfono y, si no existen, se crean.
   - Las líneas de "Producto libre" usan el producto `KK-LIBRE`, que se crea solo la primera vez.
-- **Sello**: HMAC-SHA256 del contenido (folio, fecha, cliente, partidas, descuento, IVA, total y anticipo), con una llave derivada por usuario. La llave vive en el teléfono como `CryptoKey` no extraíble. La pantalla **Ajustes → Verificar sello** (o el QR del PDF) muestra lo que realmente se cotizó.
+- **Sello**: HMAC-SHA256 del contenido (folio, fecha, cliente, partidas, descuento, IVA, total y anticipo), con una llave derivada por usuario. La llave vive en el teléfono como `CryptoKey` no extraíble. La pantalla **Ajustes → Verificar sello** muestra lo que realmente se cotizó. El QR del PDF es texto plano (`KUUKUM|V1|<folio>|<sello>`), no un enlace: el cliente no llega a la app. Desde Verificar, **Escanear QR** lo lee con la cámara o desde una foto/captura (jsQR local, funciona sin internet). También lee el QR viejo con URL.
 - **Catálogo**: los chips (prenda, género, material, color, talla, técnica, ubicación) salen del nombre de cada producto en Odoo. Se ocultan los gastos internos y los productos con precio ≤ $1 o más de 20 veces su costo. La lista de ocultos aparece en Ajustes.
 - **Revisiones**: en Detalle, **Editar** abre el asistente con una copia de la cotización. Al guardarla se crea la revisión N+1 con el mismo folio (`KK-L0012-R2`, `-R3`…) y se actualiza la misma `S000xx` en Odoo: se reemplazan las líneas y queda una nota interna en el historial con el total de antes y el de ahora. Si en Odoo ya es pedido o está cancelada, no se toca y la app ofrece **Duplicar**. Los cambios hechos directamente en Odoo no regresan a la app: si alguien edita allá, Odoo manda.
 - **Sellos de revisiones**: la rev 1 usa el canónico `kk-v1` (no cambia) y las revisiones usan `kk-v2` (`kk-v1` + `rev:N`). **Verificar** reconoce un sello de una revisión anterior y muestra los dos totales.
 - **Correo desde Odoo**: solo para clientes cautivos, es decir, con correo y al menos un pedido confirmado (cuentan también los contactos de la misma empresa). La app lo ofrece en el Paso 4 y en Detalle, y el servidor vuelve a validar la regla. El PDF de la app se adjunta a la `S000xx` y Odoo manda el correo con la plantilla de **Ajustes → Correo**. Sin internet queda en cola y se manda después de subir la cotización.
 - **Reportar un problema**: en **Ajustes → Ayuda**. Asigna un ID `CT-0001`, guarda el ticket en KV (`ticket:<ID>`, sin fotos) y lo manda por correo vía Odoo (`mail.mail`) a `reportes_email`, con las fotos adjuntas y un bloque `---ticket---` para un futuro sistema de tickets. Sin internet queda en cola (IndexedDB).
+- **Versiones**: `public/version.json`, `APP_VERSION` de `app.js` y `CACHE` de `sw.js` deben coincidir. Antes de cada deploy con cambios en `public/`: `node scripts/bump-version.mjs` (o `minor`, `major`, `X.Y.Z`). La app revisa `version.json` al abrir, al volver a primer plano y cada 30 min, y muestra el aviso **Actualizar**.
+- **Diagnóstico**: los reportes llevan el diagnóstico de `public/js/diagnostics.js` (app, datos, dispositivo y últimos 30 errores de `kk_errlog`), más hora, commit y país/colo que agrega el servidor. Va en tablas en el correo y completo en `diagnostico-CT-000N.json`. Nunca lleva ubicación, cookies, tokens ni la llave del sello.
 - **Configuración**: el correo, los teléfonos, las redes, el banco, el anticipo, la entrega, los términos y los correos con acceso se editan en **Ajustes** y aplican para todos.
 
 ## Desarrollo local

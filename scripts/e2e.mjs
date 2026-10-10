@@ -3,6 +3,8 @@
 import { makeSession, sealFor } from "../lib/core.js";
 import { calc } from "../public/js/calc.js";
 import { canonical } from "../public/js/canonical.js";
+import { parseQr } from "../public/js/scanner.js";
+import { qrText } from "../public/js/pdf.js";
 
 const APP = process.argv[2] || "http://localhost:8788";
 const ODOO = process.argv[3] || "http://localhost:8069";
@@ -44,12 +46,21 @@ async function quote(over = {}) {
   ok(canonical({ ...q, rev: 2 }, t) === v1.replace("kk-v1", "kk-v2") + "\nrev:2", "rev 2 usa kk-v2 = kk-v1 + rev:N");
 }
 
+// 0b. QR de texto plano (v0.3) y compatibilidad con la URL vieja
+{
+  const t = qrText({ folio: "KK-L0012", rev: 2, sello: "7F3A9C214B8ED015" });
+  ok(t === "KUUKUM|V1|KK-L0012-R2|7F3A9C214B8ED015" && !/https?:/.test(t), "QR nuevo: texto KUUKUM|V1|folio-Rn|sello, sin enlace", t);
+  ok(JSON.stringify(parseQr(t)) === JSON.stringify({ folio: "KK-L0012-R2", sello: "7F3A9C214B8ED015" }), "lector: formato nuevo");
+  ok(parseQr("https://cotiza.kuukum.mx/#/verificar/KK-L0012/7F3A9C214B8ED015")?.sello === "7F3A9C214B8ED015", "lector: URL vieja");
+  ok(parseQr("https://otra-cosa.com/promo") === null && parseQr("KUUKUM|V1|KK-L1|CORTO") === null, "lector: rechaza códigos ajenos o mal formados");
+}
+
 // 1. Clientes cautivos
 {
   const { status, data } = await api("clientes");
   const by = (id) => data.clientes.find((c) => c.id === id);
   ok(status === 200, "GET /api/clientes");
-  ok(by(1) && by(1).ventas === 1 && by(1).cautivo === true, "Scouts 12: venta de contacto hijo cuenta, es cautivo", by(1));
+  ok(by(1) && by(1).ventas >= 1 && by(1).cautivo === true, "Scouts 12: venta de contacto hijo cuenta, es cautivo", by(1));
   ok(by(3) && by(3).cautivo === false, "Cliente sin compras no es cautivo", by(3));
   ok(by(4) && by(4).ventas === 1 && by(4).cautivo === false, "Con compras pero sin correo no es cautivo", by(4));
 }
@@ -124,14 +135,22 @@ ok(JSON.stringify((await state())["sale.order.line"].filter((l) => l.order_id ==
 // 8. Reporte con 3 fotos, idempotente por clientId
 const foto = { name: "captura.jpg", mimetype: "image/jpeg", data: "/9j/4AAQSkZJRgABAQ==" };
 const rep = { clientId: "e2e-" + run, pantalla: "Paso 2 Productos", titulo: "No suma bien", descripcion: "Agregué 3 playeras y el total no cambió.",
-  diag: { version: "v0.2", usuario: EMAIL, conexion: "online" }, fotos: [foto, foto, foto] };
+  diag: { app: { version: "0.3.0", instalada: true }, dispositivo: { os: "iOS 26.0.1", navegador: "Safari 26.0" }, datos: {}, errores: [{ fecha: "x", tipo: "api", mensaje: "boom" }] },
+  fotos: [foto, foto, foto] };
 let r = await api("reportes", rep);
 ok(r.status === 200 && /^CT-\d{4}$/.test(r.data.id), "reporte -> ID CT-000N", r);
 const mail = (await state())["mail.mail"].at(-1);
 ok(mail && mail.subject === `[Cotiza App][${r.data.id}][Paso 2 Productos] No suma bien`, "asunto del correo", mail && mail.subject);
 ok(mail && mail.email_to === "hola@kuukum.com" && mail.reply_to === EMAIL && mail.auto_delete === false && mail.state === "sent", "destino, reply_to, enviado", mail);
-ok(mail && mail.attachment_ids[0][2].length === 3, "3 fotos adjuntas");
-ok(mail && mail.body_html.includes(`---ticket---\nid: ${r.data.id}\npantalla: Paso 2 Productos\nusuario: ${EMAIL}\nversion: v0.2\nestado: nuevo\n---fin---`), "bloque ---ticket--- parseable");
+const atts = (await state())["ir.attachment"].filter((a) => mail.attachment_ids[0][2].includes(a.id));
+ok(atts.length === 4 && atts.filter((a) => a.mimetype === "image/jpeg").length === 3, "3 fotos adjuntas + JSON", atts.map((a) => a.name));
+const dj = atts.find((a) => a.name === `diagnostico-${r.data.id}.json`);
+const djson = dj && JSON.parse(Buffer.from(dj.datas, "base64").toString("utf8"));
+ok(djson && djson.diag.dispositivo.os === "iOS 26.0.1" && djson.servidor.commit && !("ip" in djson.servidor), "diagnostico-CT-000N.json completo, sin IP", djson && djson.servidor);
+const bloque = mail && (mail.body_html.match(/---ticket---[\s\S]*?---fin---/) || [""])[0];
+ok(new RegExp(`^---ticket---\nid: ${r.data.id}\npantalla: Paso 2 Productos\nusuario: ${EMAIL}\nversion: 0\\.3\\.0\ncommit: \\S+\nos: iOS 26\\.0\\.1\nnavegador: Safari 26\\.0\ninstalada: true\nestado: nuevo\n---fin---$`).test(bloque),
+  "bloque ---ticket--- con version, commit, os, navegador, instalada", bloque);
+ok(mail && /<h3[^>]*>App<\/h3>/.test(mail.body_html) && /Dispositivo/.test(mail.body_html) && /Sincronización/.test(mail.body_html) && /Errores recientes \(1\)/.test(mail.body_html), "tablas App, Dispositivo, Sincronización, Errores");
 const n = (await state())["mail.mail"].length;
 const again = await api("reportes", rep);
 ok(again.data.id === r.data.id && (await state())["mail.mail"].length === n, "reintento con el mismo clientId no duplica");

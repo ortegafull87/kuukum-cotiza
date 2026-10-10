@@ -9,16 +9,33 @@ export const ls = {
   del(k) { try { localStorage.removeItem("kk_" + k); } catch {} }
 };
 
+// ---------- Errores recientes (para el diagnóstico de "Reportar un problema") ----------
+const errMem = [];
+export function logError(e) {
+  errMem.push({ fecha: new Date().toISOString(), ...e });
+  if (errMem.length > 30) errMem.shift();
+  ls.set("errlog", [...ls.get("errlog", []), errMem[errMem.length - 1]].slice(-30));
+}
+export const recentErrors = () => { const l = ls.get("errlog", null); return Array.isArray(l) && l.length ? l : errMem.slice(); };
+
 // ---------- API ----------
 export class AuthError extends Error {}
 export async function api(path, opts = {}) {
-  const r = await fetch("/api/" + path, {
-    credentials: "same-origin",
-    headers: opts.body ? { "content-type": "application/json" } : {},
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined
-  });
+  const ruta = path.split("?")[0];
+  let r;
+  try {
+    r = await fetch("/api/" + path, {
+      credentials: "same-origin",
+      headers: opts.body ? { "content-type": "application/json" } : {},
+      ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+  } catch (e) {
+    logError({ tipo: "api", ruta, status: 0, mensaje: e.message || "Sin red" });
+    throw e;
+  }
   let data = null; try { data = await r.json(); } catch {}
+  if (!r.ok) logError({ tipo: "api", ruta, status: r.status, mensaje: (data && data.error) || "Error " + r.status });
   // 403 con auth:true = el correo perdió acceso; otros 403 son reglas de negocio.
   if (r.status === 401 || (r.status === 403 && data && data.auth)) throw new AuthError((data && data.error) || "Sin sesión");
   if (!r.ok) { const e = new Error((data && data.error) || "Error " + r.status); e.status = r.status; throw e; }
@@ -126,6 +143,7 @@ export async function syncAll(onChange, { pdfBase64 } = {}) {
       onChange && onChange();
     }
   } finally { running = false; }
+  if (!auth && !err) ls.set("lastSync", new Date().toISOString());
   return { ok, err, correos, auth };
 }
 
