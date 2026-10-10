@@ -107,7 +107,8 @@ const METHODS = {
   action_draft: (m, b) => { for (const id of b.ids) { const r = rec(m, id); if (["cancel", "sent"].includes(r.state)) r.state = "draft"; } return true; },
   message_post: (m, b) => b.ids.map((id) => {
     const msg = { id: ++seq.n, model: m, res_id: id, body: b.body, body_is_html: !!b.body_is_html, subject: b.subject || false,
-      partner_ids: b.partner_ids || [], attachment_ids: b.attachment_ids || [], message_type: b.message_type, subtype_xmlid: b.subtype_xmlid };
+      partner_ids: b.partner_ids || [], attachment_ids: b.attachment_ids || [], message_type: b.message_type, subtype_xmlid: b.subtype_xmlid,
+      email_from: b.email_from || false };
     db["mail.message"].push(msg); return msg.id;
   })[0],
   unlink: (m, b) => { db[m] = db[m].filter((r) => !b.ids.includes(r.id)); return true; },

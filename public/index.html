@@ -14,17 +14,57 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" href="/icons/icon-192.png">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/styles.css?v=0.3.3">
 </head>
 <body>
+<!-- Red de seguridad de arranque. Si cambias este script, actualiza su hash en public/_headers (lo revisa scripts/e2e.mjs). -->
+<script>
+(function () {
+  // Red de seguridad: si la app no arranca en 6 s (archivos viejos en caché, un import roto…), ofrece reparar.
+  // Solo borra el service worker y Cache Storage. Nunca localStorage ni IndexedDB: ahí viven las cotizaciones,
+  // el borrador y la llave del sello. Sin dependencias y sin módulos, para que funcione aunque todo lo demás falle.
+  var err = "";
+  window.addEventListener("error", function (e) {
+    if (window.__kkBooted) return;
+    var t = e.target;
+    err = t && t !== window && (t.src || t.href) ? "no cargó " + (t.src || t.href) : (e.message || "error");
+  }, true);
+  function log(m) {
+    try {
+      var l = JSON.parse(localStorage.getItem("kk_errlog") || "[]");
+      l.push({ fecha: new Date().toISOString(), tipo: "arranque", mensaje: m });
+      localStorage.setItem("kk_errlog", JSON.stringify(l.slice(-30)));
+    } catch (x) {}
+  }
+  window.__kkRescue = setTimeout(function () {
+    if (window.__kkBooted) return;
+    log("La app no arrancó en 6 s" + (err ? ": " + err : ""));
+    var d = document.createElement("div");
+    d.id = "kk-rescue";
+    d.setAttribute("style", "position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;font:16px -apple-system,system-ui,sans-serif;background:#001E28;color:#E6F2F1");
+    d.innerHTML = '<b style="font-size:20px">No se pudo cargar Cotiza App</b>' +
+      '<span style="opacity:.8;max-width:320px">Tus cotizaciones siguen guardadas en este teléfono.</span>' +
+      '<button type="button" style="min-height:48px;padding:0 24px;border:0;border-radius:999px;background:#5ED1C3;color:#002C37;font:700 16px -apple-system,system-ui,sans-serif">Reparar y recargar</button>';
+    document.body.appendChild(d);
+    d.querySelector("button").onclick = function () {
+      this.disabled = true; this.textContent = "Reparando…";
+      log("Reparar y recargar");
+      var jobs = [];
+      if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+      if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+      Promise.all(jobs).catch(function () {}).then(function () { location.replace("/?r=" + Date.now() + location.hash); });
+    };
+  }, 6000);
+})();
+</script>
 <div id="update-banner" role="status" aria-live="polite" hidden></div>
 <div id="app"></div>
 <div id="sheet-root"></div>
 <div id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/vendor/jspdf.umd.min.js"></script>
-<script src="/vendor/jspdf.plugin.autotable.min.js"></script>
-<script src="/vendor/qrcode.js"></script>
-<script src="/vendor/jsQR.js"></script>
-<script type="module" src="/js/app.js"></script>
+<script src="/vendor/jspdf.umd.min.js?v=0.3.3"></script>
+<script src="/vendor/jspdf.plugin.autotable.min.js?v=0.3.3"></script>
+<script src="/vendor/qrcode.js?v=0.3.3"></script>
+<script src="/vendor/jsQR.js?v=0.3.3"></script>
+<script type="module" src="/js/app.js?v=0.3.3"></script>
 </body>
 </html>

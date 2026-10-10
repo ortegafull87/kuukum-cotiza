@@ -56,6 +56,8 @@ export async function onRequestPost({ request, env, data }) {
       ids: [rec.id],
       body: html,
       body_is_html: true,   // sin esto Odoo 19 escapa el texto y el correo mostraría las etiquetas
+      // Remitente del dominio de Odoo; las respuestas del cliente llegan al historial de la cotización (catchall).
+      email_from: `"${String(config.empresa || "Kuu Kum Personalizados").replace(/"/g, "")}" <${config.correo_remitente || "notifications@kuukum.odoo.com"}>`,
       subject: `Cotización ${folio} · ${config.empresa || "Kuu Kum Personalizados"}`,
       partner_ids: [partnerId],
       attachment_ids: [attId],

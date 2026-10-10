@@ -3,7 +3,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(self), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: blob:; form-action 'self' https://accounts.google.com; base-uri 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-FYZwHQjJUZ4/q897ya5F5sTVKiJRKSxxShQMBVEnQQg=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: blob:; form-action 'self' https://accounts.google.com; base-uri 'self'
 
 # Siempre revalidar el shell para que las actualizaciones lleguen.
 /

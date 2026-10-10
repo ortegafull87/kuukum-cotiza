@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js";
-import { openScanner, closeScanner } from "./scanner.js";
-import { collectDiagnostics, diagText } from "./diagnostics.js";
+import { calc, money, r2, parseMoney } from "./calc.js?v=0.3.3";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.3.3";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.3.3";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js?v=0.3.3";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.3.3";
+import { openScanner, closeScanner } from "./scanner.js?v=0.3.3";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.3.3";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.3.2";
+const APP_VERSION = "0.3.3";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -96,6 +96,8 @@ function fixSafeArea() {
 
 // ---------- Arranque ----------
 async function boot() {
+  // "Reparar y recargar" vuelve con ?r=…: se limpia la URL.
+  if (location.search) history.replaceState(null, "", location.pathname + location.hash);
   fixSafeArea();
   window.addEventListener("resize", fixSafeArea);
   preloadLogo().catch(() => {});
@@ -137,16 +139,21 @@ function renderBanner() {
   if (show) el.innerHTML = `<span>Hay una versión nueva de Cotiza App</span><button class="pill" data-act="applyUpdate">Actualizar</button>`;
 }
 // Si hay un service worker en espera, se activa y luego se recarga; si no, solo se recarga.
+// Antes de recargar se intenta subir lo pendiente (máx. 5 s, sin bloquear). Se recarga una sola vez: al llegar
+// controllerchange o a los 3 s, lo que pase primero.
+let recargando = false;
 async function applyUpdate() {
+  if (quotes.all().some(needsSync) && navigator.onLine) {
+    await Promise.race([runSync().catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+  }
+  const recargar = () => { if (recargando) return; recargando = true; location.reload(); };
   const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
   if (reg && reg.waiting) {
-    await new Promise((res) => {
-      navigator.serviceWorker.addEventListener("controllerchange", res, { once: true });
-      reg.waiting.postMessage("SKIP_WAITING");
-      setTimeout(res, 4000);
-    });
-  }
-  location.reload();
+    navigator.serviceWorker.addEventListener("controllerchange", recargar, { once: true });
+    reg.waiting.postMessage("SKIP_WAITING");
+    setTimeout(recargar, 3000);
+  } else recargar();
+  await new Promise(() => {});   // el botón sigue en "Actualizando…" hasta que la página se recargue
 }
 
 // manual: lo pidió el usuario (Actualizar catálogo y clientes) y debe enterarse si falla.
@@ -185,6 +192,15 @@ async function runSync() {
 
 // ---------- Render principal ----------
 function render() {
+  renderRoute();
+  // Primera pantalla pintada: cancela la red de seguridad de index.html ("No se pudo cargar Cotiza App").
+  if (!window.__kkBooted) {
+    window.__kkBooted = true;
+    clearTimeout(window.__kkRescue);
+    const r = document.getElementById("kk-rescue"); if (r) r.remove();
+  }
+}
+function renderRoute() {
   const r = route();
   closeSheet(); closeScanner();
   if (r.startsWith("/login") || (!S.user && !r.startsWith("/verificar"))) return renderLogin();
@@ -616,7 +632,8 @@ const CFG_FIELDS = [
   ["Pago", [["banco", "Banco"], ["clabe", "CLABE"], ["beneficiario", "Beneficiario"], ["anticipo_pct", "Anticipo por defecto %", "numeric"]]],
   ["Condiciones por defecto", [["entrega_texto", "Tiempo de entrega"], ["vigencia_dias", "Vigencia (días)", "numeric"], ["terminos", "Términos y condiciones", "area"]]],
   ["Correo", [["correo_cotizacion", "Mensaje del correo de cotización", "area", "Puedes usar {cliente}, {folio}, {total}, {vigencia} y {whatsapp}. Solo se manda a clientes con al menos una compra."],
-    ["reportes_email", "Correo que recibe los reportes de problemas", "email"]]],
+    ["reportes_email", "Correo que recibe los reportes de problemas", "email"],
+    ["correo_remitente", "Remitente de los correos (dirección de Odoo)", "email", "Debe ser del dominio de Odoo (p. ej. notifications@kuukum.odoo.com) para no caer en spam."]]],
   ["Acceso", [["usuarios_permitidos", "Correos con acceso (uno por línea)", "area"]]]
 ];
 function renderSettings() {
@@ -659,6 +676,7 @@ function renderSettings() {
         </div>
         <div class="card"><h3>Versión</h3>
           <div class="kv"><span>Cotiza App</span><span class="num">${APP_VERSION}</span></div>
+          <div class="muted small">Cotizaciones guardadas en este teléfono: ${quotes.all().length} · por subir: ${quotes.all().filter(needsSync).length}</div>
           ${S.updateTo ? `<div class="muted small">Disponible: ${esc(S.updateTo)}</div>` : ""}
           <button class="pill soft block" data-act="checkUpdate">Buscar actualización</button>
         </div>

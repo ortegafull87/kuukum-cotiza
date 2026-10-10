@@ -1,7 +1,7 @@
 // PDF de la cotización (jsPDF + autotable + qrcode-generator, todo local para funcionar offline).
-import { calc, money } from "./calc.js";
-import { formatSeal, folioVisible, cleanSeal } from "./canonical.js";
-import { logError } from "./store.js";
+import { calc, money } from "./calc.js?v=0.3.3";
+import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.3.3";
+import { logError } from "./store.js?v=0.3.3";
 
 let logoData = null;
 const ICONOS = ["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"];

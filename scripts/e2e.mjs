@@ -56,6 +56,26 @@ async function quote(over = {}) {
   ok(parseQr("https://otra-cosa.com/promo") === null && parseQr("KUUKUM|V1|KK-L1|CORTO") === null, "lector: rechaza códigos ajenos o mal formados");
 }
 
+// 0c. Archivos de la app: versiones coherentes, CSP de la red de seguridad, sin /index.html en el precache
+{
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { createHash } = await import("node:crypto");
+  const pub = (p) => readFileSync(new URL("../public/" + p, import.meta.url), "utf8");
+  const ver = JSON.parse(pub("version.json")).version;
+  const html = pub("index.html");
+  const all = [html, ...readdirSync(new URL("../public/js/", import.meta.url)).map((f) => pub("js/" + f))].join("\n");
+  const vs = [...all.matchAll(/\?v=(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+  ok(vs.length >= 20 && vs.every((v) => v === ver), `todos los ?v= son ${ver} (${vs.length})`, [...new Set(vs)]);
+  ok(!/from\s+"\.\/[\w-]+\.js"/.test(all) && !/(src|href)="\/(js|vendor)\/[^"?]+"/.test(html) && /href="\/styles\.css\?v=/.test(html), "ningún módulo, script o CSS sin ?v=");
+  const sw = pub("sw.js");
+  ok(sw.includes(`const VERSION = "${ver}"`) && pub("js/app.js").includes(`const APP_VERSION = "${ver}"`), "sw.js y app.js con la misma versión");
+  ok(!/["']\/index\.html["']/.test(sw), "sw.js no precachea /index.html (Cloudflare lo redirige)");
+  const inline = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const hash = createHash("sha256").update(inline).digest("base64");
+  ok(pub("_headers").includes(`'sha256-${hash}'`), "CSP permite el script en línea de la red de seguridad (hash al día)", hash);
+  ok(!/localStorage\.(clear|removeItem)|indexedDB\.deleteDatabase/.test(inline), "la red de seguridad no borra localStorage ni IndexedDB");
+}
+
 // 1. Clientes cautivos
 {
   const { status, data } = await api("clientes");
@@ -107,6 +127,7 @@ let c = await api("correo", { uuid: r1.uuid, rev: 2, pdfBase64: "JVBERi0xLjQK" }
 so = await order(soId);
 let msgs = (await state())["mail.message"].filter((m) => m.res_id === soId && m.subtype_xmlid === "mail.mt_comment");
 ok(c.status === 200 && c.data.email === "ana@scouts12.mx" && c.data.rev === 2, "correo a cliente cautivo", c);
+ok(msgs[0] && msgs[0].email_from === '"Kuu Kum Personalizados" <notifications@kuukum.odoo.com>', "correo de cotización con remitente de Odoo", msgs[0] && msgs[0].email_from);
 ok(msgs.length === 1 && msgs[0].partner_ids[0] === 1 && msgs[0].attachment_ids.length === 1 && msgs[0].body_is_html, "message_post con cliente, PDF y HTML", msgs[0]);
 ok(msgs[0] && msgs[0].subject === `Cotización ${r1.folio}-R2 · Kuu Kum Personalizados` && /Grupo Scouts 12/.test(msgs[0].body), "asunto y plantilla con placeholders", msgs[0]);
 ok(so.state === "sent", "correo marca la cotización como enviada");
@@ -143,6 +164,7 @@ ok(r.status === 200 && /^CT-\d{4}$/.test(r.data.id), "reporte -> ID CT-000N", r)
 const mail = (await state())["mail.mail"].at(-1);
 ok(mail && mail.subject === `[Cotiza App][${r.data.id}][Paso 2 Productos] No suma bien`, "asunto del correo", mail && mail.subject);
 ok(mail && mail.email_to === "hola@kuukum.com" && mail.reply_to === EMAIL && mail.auto_delete === false && mail.state === "sent", "destino, reply_to, enviado", mail);
+ok(mail && mail.email_from === '"Cotiza App" <notifications@kuukum.odoo.com>', "remitente de Odoo (no el correo del usuario)", mail && mail.email_from);
 const atts = (await state())["ir.attachment"].filter((a) => mail.attachment_ids[0][2].includes(a.id));
 ok(atts.length === 4 && atts.filter((a) => a.mimetype === "image/jpeg").length === 3, "3 fotos adjuntas + JSON", atts.map((a) => a.name));
 const dj = atts.find((a) => a.name === `diagnostico-${r.data.id}.json`);

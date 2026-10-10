@@ -65,6 +65,8 @@ export async function onRequestPost({ request, env, data }) {
         subject: `[Cotiza App][${id}][${pantalla}] ${titulo}`,
         body_html: bodyHtml(t),
         email_to: to,
+        // Remitente de Odoo (no el correo del usuario: fallaría SPF/DMARC); "Responder" le llega a quien reportó.
+        email_from: `"Cotiza App" <${data.config.correo_remitente || "notifications@kuukum.odoo.com"}>`,
         reply_to: t.email,
         attachment_ids: [[6, 0, attIds]],
         auto_delete: false

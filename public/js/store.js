@@ -1,6 +1,6 @@
 // Datos locales, llamadas a la API, cola de sincronización y sello.
-import { calc } from "./calc.js";
-import { canonical, sealFromBytes } from "./canonical.js";
+import { calc } from "./calc.js?v=0.3.3";
+import { canonical, sealFromBytes } from "./canonical.js?v=0.3.3";
 
 // ---------- localStorage ----------
 export const ls = {
