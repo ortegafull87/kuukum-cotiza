@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js?v=0.3.4";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.3.4";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.3.4";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js?v=0.3.4";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.3.4";
-import { openScanner, closeScanner } from "./scanner.js?v=0.3.4";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.3.4";
+import { calc, money, r2, parseMoney } from "./calc.js?v=0.3.5";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.3.5";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.3.5";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js?v=0.3.5";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.3.5";
+import { openScanner, closeScanner } from "./scanner.js?v=0.3.5";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.3.5";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.3.4";
+const APP_VERSION = "0.3.5";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -244,7 +244,7 @@ function renderLogin() {
       <div><h1 style="margin:0 0 6px;font-size:24px">Cotiza App</h1><p>Entra con tu cuenta de Google autorizada.</p></div>
       ${msg ? `<div class="notice">${msg}</div>` : ""}
       ${navigator.onLine ? `<div id="gbtn" style="min-height:44px"></div>` : `<div class="notice info">Necesitas internet para entrar. Después la app funciona sin conexión.</div>`}
-      ${S.user ? `<button class="pill ghost" data-act="nav" data-to="/cotizaciones">Seguir sin conexión</button>` : ""}
+      ${S.user ? `<button class="pill" data-act="nav" data-to="/cotizaciones">Seguir sin conexión</button>` : ""}
     </div></div>`;
   if (!navigator.onLine) return;
   const init = () => {
@@ -578,7 +578,7 @@ function renderDetail(uuid) {
   const odooLink = q.odoo && S.user.odooUrl ? `${S.user.odooUrl}/odoo/sales/${q.odoo.id}` : "";
   $app.innerHTML = `
     <div class="screen">
-      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver">${I.back}</button>
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver a cotizaciones">${I.back}</button>
         <h1 class="num">${esc(folioDe(q))}</h1><span id="pill">${pillHtml()}</span></header>
       <main class="content">
         <div class="card">
@@ -609,7 +609,7 @@ function renderDetail(uuid) {
         <button class="pill soft block" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
         ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync" data-label="Subiendo…">Reintentar subida</button>` : ""}
         ${odooLink ? `<a class="pill ghost block" style="display:grid;place-items:center;text-decoration:none" href="${odooLink}" target="_blank" rel="noopener">Abrir ${esc(q.odoo.name)} en Odoo</a>` : ""}
-        <button class="pill ghost block" data-act="nav" data-to="/cotizaciones">Ver mis cotizaciones</button>
+        <button class="pill block" data-act="nav" data-to="/cotizaciones">Volver a cotizaciones</button>
       </main>
     </div>`;
 }
@@ -641,7 +641,7 @@ function renderSettings() {
   const users = c.usuarios_permitidos || "loidaegr@gmail.com\nortegafull87@gmail.com\nkuukum.mx@gmail.com";
   $app.innerHTML = `
     <div class="screen">
-      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver">${I.back}</button><h1>Ajustes</h1></header>
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver a cotizaciones">${I.back}</button><h1>Ajustes</h1></header>
       <main class="content settings">
         ${!navigator.onLine ? `<div class="notice info">Sin internet: puedes ver los ajustes, pero los cambios se guardan cuando haya conexión.</div>` : ""}
         <form id="cfgform" class="content" style="padding:0;gap:14px">
