@@ -53,8 +53,8 @@ const go = (h) => { if (location.hash === "#" + h) render(); else location.hash 
 
 // ---------- Arranque ----------
 async function boot() {
-  preloadLogo().catch(() => {});
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  preloadLogo().catch(() => { });
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
   window.addEventListener("hashchange", render);
   window.addEventListener("online", () => { refresh(); renderPill(); });
   window.addEventListener("offline", renderPill);
@@ -76,7 +76,7 @@ async function refresh() {
     S.cfg = cfg; ls.set("config", cfg);
     ls.set("catalog", cat); S.catalog = enrich(cat.productos); S.revisar = cat.revisar || [];
     ls.set("clientes", cli); S.clientes = cli.clientes;
-    if (!route() || route() === "/" ) go("/nueva");
+    if (!route() || route() === "/") go("/nueva");
     await runSync();
   } catch (e) {
     if (e instanceof AuthError) {
@@ -350,6 +350,7 @@ function drawSheet(keepFocus) {
   const pool = filter(S.catalog, SH.sel, SH.text);
   const vals = facetValues(pool);
   const results = pool.slice(0, 60);
+  if (!SH.pick && pool.length === 1) SH.pick = pool[0].id;   // si solo queda uno, ya está elegido
   const scroll = $sheet.querySelector(".body")?.scrollTop || 0;
   $sheet.innerHTML = `
     <div class="backdrop" data-act="closeSheet"></div>
@@ -359,17 +360,17 @@ function drawSheet(keepFocus) {
       <div class="body">
         <label class="search">${I.search}<input id="sq" placeholder="Buscar en el catálogo…" value="${esc(SH.text)}" autocomplete="off"></label>
         ${FACETAS.map(([k, label]) => {
-          const opts = vals[k];
-          if (!opts.length && !SH.sel[k]) return "";
-          const list = SH.sel[k] && !opts.includes(SH.sel[k]) ? [SH.sel[k], ...opts] : opts;
-          return `<div class="facet"><span class="label">${label}</span><div class="chips">${list.map((v) =>
-            `<button class="chip ${SH.sel[k] === v ? "on" : ""}" data-act="facet" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join("")}</div></div>`;
-        }).join("")}
-        <div class="label">${pool.length} producto${pool.length === 1 ? "" : "s"}</div>
+    const opts = vals[k];
+    if (!opts.length && !SH.sel[k]) return "";
+    const list = SH.sel[k] && !opts.includes(SH.sel[k]) ? [SH.sel[k], ...opts] : opts;
+    return `<div class="facet"><span class="label">${label}</span><div class="chips">${list.map((v) =>
+      `<button class="chip ${SH.sel[k] === v ? "on" : ""}" data-act="facet" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join("")}</div></div>`;
+  }).join("")}
+        <div class="label">${pool.length} producto${pool.length === 1 ? "" : "s"}${SH.pick ? "" : " · toca uno para elegirlo"}</div>
         <div style="display:grid;gap:8px">${results.map((p) => {
-          const m = p.p > 0 ? Math.round(((p.p - p.c) / p.p) * 100) : 0;
-          return `<button class="res ${SH.pick === p.id ? "on" : ""}" data-act="pickProd" data-id="${p.id}"><span class="grow">${esc(p.n)}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
-        }).join("") || `<div class="empty">Nada con esos filtros. Quita un chip o usa "Producto libre".</div>`}</div>
+    const m = p.p > 0 ? Math.round(((p.p - p.c) / p.p) * 100) : 0;
+    return `<button class="res ${SH.pick === p.id ? "on" : ""}" data-act="pickProd" data-id="${p.id}"><span class="grow">${esc(p.n)}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
+  }).join("") || `<div class="empty">Nada con esos filtros. Quita un chip o usa "Producto libre".</div>`}</div>
       </div>
       <div class="foot">
         <div class="stepper">
@@ -413,15 +414,15 @@ function renderList() {
           <div class="muted">${esc(d.cliente.nombre || "Sin cliente")} · ${d.items.length} producto(s)</div></button>` : ""}
         <label class="search">${I.search}<input id="lq" placeholder="Buscar cliente o folio" value="${esc(S.listQuery)}" autocomplete="off"></label>
         <div class="chips">${[["todas", "Todas"], ["pend", "Por subir"], ["env", "Enviadas"], ["err", "Con error"]].map(([k, v]) =>
-          `<button class="chip ${S.listFilter === k ? "on" : ""}" data-act="lf" data-v="${k}">${v}</button>`).join("")}</div>
+    `<button class="chip ${S.listFilter === k ? "on" : ""}" data-act="lf" data-v="${k}">${v}</button>`).join("")}</div>
         <div id="qlist">${list.length ? list.map((q) => {
-          const t = calc(q), pzs = q.items.reduce((a, i) => a + Number(i.q), 0);
-          return `<button class="qcard" data-act="nav" data-to="/cotizacion/${q.uuid}">
+      const t = calc(q), pzs = q.items.reduce((a, i) => a + Number(i.q), 0);
+      return `<button class="qcard" data-act="nav" data-to="/cotizacion/${q.uuid}">
             <div class="r1"><span class="folio">${esc(q.folio)}</span>${statusChip(q)}</div>
             <div class="muted">${esc(q.cliente.nombre)} · ${canalName(q.canal)}</div>
             <div class="r3"><span class="muted small">${pzs} pza${pzs === 1 ? "" : "s"} · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total">${money(t.total)}</span></div>
           </button>`;
-        }).join("") : `<div class="empty">${all.length ? "Nada con ese filtro." : "Aún no hay cotizaciones. Toca <b>Nueva</b> para empezar."}</div>`}</div>
+    }).join("") : `<div class="empty">${all.length ? "Nada con ese filtro." : "Aún no hay cotizaciones. Toca <b>Nueva</b> para empezar."}</div>`}</div>
       </main>
       ${tabbar("lista")}
     </div>`;
@@ -468,7 +469,7 @@ function renderDetail(uuid) {
 const CFG_FIELDS = [
   ["Empresa", [["empresa", "Nombre comercial"], ["titular", "Titular"], ["rfc", "RFC"]]],
   ["Contacto en el PDF", [["email", "Correo", "email"], ["telefono", "Teléfono", "tel"], ["whatsapp", "WhatsApp", "tel"], ["sitio_web", "Sitio web"],
-    ["instagram", "Instagram (usuario)"], ["facebook", "Facebook (usuario)"], ["tiktok", "TikTok (usuario)"], ["direccion", "Dirección"]]],
+  ["instagram", "Instagram (usuario)"], ["facebook", "Facebook (usuario)"], ["tiktok", "TikTok (usuario)"], ["direccion", "Dirección"]]],
   ["Pago", [["banco", "Banco"], ["clabe", "CLABE"], ["beneficiario", "Beneficiario"], ["anticipo_pct", "Anticipo por defecto %", "numeric"]]],
   ["Condiciones por defecto", [["entrega_texto", "Tiempo de entrega"], ["vigencia_dias", "Vigencia (días)", "numeric"], ["terminos", "Términos y condiciones", "area"]]],
   ["Acceso", [["usuarios_permitidos", "Correos con acceso (uno por línea)", "area"]]]
@@ -483,11 +484,11 @@ function renderSettings() {
         ${!navigator.onLine ? `<div class="notice info">Sin internet: puedes ver los ajustes, pero los cambios se guardan cuando haya conexión.</div>` : ""}
         <form id="cfgform" class="content" style="padding:0;gap:14px">
           ${CFG_FIELDS.map(([title, fields]) => `<div class="card"><h3>${title}</h3>${fields.map(([k, label, type]) => {
-            const v = k === "usuarios_permitidos" ? users : c[k] ?? "";
-            return type === "area"
-              ? `<label class="field">${label}<textarea name="${k}" id="cfg-${k}" rows="4">${esc(v)}</textarea></label>`
-              : `<label class="field">${label}<input name="${k}" id="cfg-${k}" value="${esc(v)}" ${type ? `inputmode="${type}"` : ""} autocomplete="off"></label>`;
-          }).join("")}</div>`).join("")}
+    const v = k === "usuarios_permitidos" ? users : c[k] ?? "";
+    return type === "area"
+      ? `<label class="field">${label}<textarea name="${k}" id="cfg-${k}" rows="4">${esc(v)}</textarea></label>`
+      : `<label class="field">${label}<input name="${k}" id="cfg-${k}" value="${esc(v)}" ${type ? `inputmode="${type}"` : ""} autocomplete="off"></label>`;
+  }).join("")}</div>`).join("")}
           <button class="pill block" type="submit">Guardar ajustes</button>
         </form>
         <div class="card"><h3>Datos</h3>
@@ -653,8 +654,10 @@ const ACT = {
   dup: (el) => {
     const q = quotes.get(el.dataset.uuid);
     if (S.draft && (S.draft.cliente.nombre || S.draft.items.length) && !confirm("Ya tienes un borrador en curso. ¿Reemplazarlo?")) return;
-    S.draft = newDraft({ cliente: { ...q.cliente }, canal: q.canal, items: q.items.map((i) => ({ ...i })), desc: q.desc, iva: q.iva,
-      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2 });
+    S.draft = newDraft({
+      cliente: { ...q.cliente }, canal: q.canal, items: q.items.map((i) => ({ ...i })), desc: q.desc, iva: q.iva,
+      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2
+    });
     saveDraft(); go("/nueva");
   },
   lf: (el) => { S.listFilter = el.dataset.v; renderList(); },
@@ -663,7 +666,7 @@ const ACT = {
   logout: async () => {
     const pend = quotes.all().filter(needsSync).length;
     if (!confirm(pend ? `Hay ${pend} cotización(es) sin subir a Odoo. Si cierras sesión se quedan en este teléfono hasta que vuelvas a entrar. ¿Cerrar sesión?` : "¿Cerrar sesión?")) return;
-    try { await api("auth/logout", { method: "POST" }); } catch {}
+    try { await api("auth/logout", { method: "POST" }); } catch { }
     await clearKeys(); ls.del("user"); S.user = null; go("/login");
   }
 };
