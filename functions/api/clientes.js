@@ -3,9 +3,9 @@ import { odoo, m2o } from "../../lib/odoo.js";
 
 // Clientes de Odoo con su número de pedidos confirmados (por empresa, contando contactos hijos).
 // "cautivo" = al menos una venta y con correo: solo a ellos se les puede mandar la cotización por correo.
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env, data }) {
   try {
-    const call = odoo(env);
+    const call = odoo(env, data.log);
     const [rows, ventas] = await Promise.all([
       call("res.partner", "search_read", {
         domain: [["customer_rank", ">", 0], ["active", "=", true]],

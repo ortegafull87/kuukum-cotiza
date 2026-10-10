@@ -215,3 +215,6 @@ details.card summary { min-height: 44px; display: flex; align-items: center; cur
   padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 600; }
 #update-banner .pill { height: 44px; padding: 0 16px; font-size: 15px; flex: none; }
 body.has-update .screen, body.has-update .login { padding-top: calc(60px + env(safe-area-inset-top)); }
+
+/* Registro del servidor */
+.logrow { display: grid; gap: 4px; padding: 12px 2px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }

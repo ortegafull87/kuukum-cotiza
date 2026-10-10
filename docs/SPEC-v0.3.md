@@ -51,6 +51,16 @@ Guardar ajustes, Verificar, Reintentar subida, Enviar por correo, Actualizar cat
 - **Nunca se envía**: GPS, contactos, contenido de otras apps, cookies, tokens, la llave del sello, datos de clientes (salvo el folio del borrador).
 - iOS no expone el modelo exacto del iPhone; versión de iOS + pantalla + densidad bastan para la familia.
 
+## 6. Logs del servidor y correlación con reportes
+- `lib/log.js`: `_middleware.js` asigna un `requestId` corto (de `cf-ray` si existe), lo devuelve en `x-request-id` y en todo error
+  (`{error, requestId}`). Al final de cada petición, una línea JSON con `console.log`:
+  `{ts, requestId, method, ruta, status, ms, usuario, folio?, odoo:{modelo, método, ms, ok}[], error?}`. Cada llamada a Odoo se mide;
+  en los errores se registra el mensaje de Odoo. Nunca: API key, cookies, sello o llave, PDF, fotos ni datos personales (del cliente solo su id de Odoo).
+- Registro persistente: status ≥ 500 o error de Odoo → KV `errlog:<ts>:<requestId>` con TTL de 30 días.
+  Ajustes → **Registro del servidor** (últimos 50, `GET /api/errores`).
+- Correlación: la app guarda el `requestId` en su registro local y viaja en el reporte; los toasts de error muestran "(ref 8c1f2a)".
+- README: `npx wrangler pages deployment tail --project-name kuukum-cotiza` o el panel de Cloudflare; historial en Ajustes.
+
 ## Criterios de aceptación
 - El QR de un PDF nuevo muestra solo texto `KUUKUM|V1|…`, sin enlace.
 - Verificar tiene un solo **Escanear QR** que lee el código nuevo y el viejo, llena Folio y Sello y verifica sin teclear.
@@ -59,3 +69,4 @@ Guardar ajustes, Verificar, Reintentar subida, Enviar por correo, Actualizar cat
 - Tras un deploy con versión nueva, al volver a la app aparece el banner y **Actualizar** carga la nueva versión.
 - Ningún botón con petición de red permite doble toque; todos muestran estado de carga.
 - El reporte incluye el diagnóstico en el correo y como `diagnostico-CT-000N.json`, sin ubicación, tokens ni la llave del sello.
+- Un error de Odoo aparece en `wrangler pages deployment tail` como JSON con `requestId`, en Ajustes → Registro del servidor, y su `requestId` viaja en el reporte de problema.

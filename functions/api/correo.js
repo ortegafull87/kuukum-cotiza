@@ -22,7 +22,7 @@ export async function onRequestPost({ request, env, data }) {
   const prev = await env.KK.get(correoKey, "json");
   if (prev && prev.rev === (rec.rev || 1) && !body.force) return json({ ...prev, yaEnviado: true, enviada: true });
 
-  const call = odoo(env);
+  const call = odoo(env, data.log);
   try {
     const [so] = await call("sale.order", "read", {
       ids: [rec.id], fields: ["name", "partner_id", "amount_total", "validity_date", "client_order_ref", "state"]
@@ -41,6 +41,7 @@ export async function onRequestPost({ request, env, data }) {
     if (!ventas) return fail("El correo solo está disponible para clientes con al menos una compra. Envíala por WhatsApp.", 403);
 
     const folio = so.client_order_ref || so.name;
+    data.log.folio = folio; data.log.cliente = partnerId;
     const [attId] = await call("ir.attachment", "create", {
       vals_list: [{
         name: `Cotizacion_${folio}.pdf`, datas: pdfBase64, mimetype: "application/pdf",

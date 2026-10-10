@@ -4,7 +4,7 @@ import { odoo } from "../../lib/odoo.js";
 // Productos vendibles de Odoo, sin gastos internos ni precios capturados mal.
 export async function onRequestGet({ env, data }) {
   try {
-    const call = odoo(env);
+    const call = odoo(env, data.log);
     const rows = await call("product.product", "search_read", {
       domain: [["sale_ok", "=", true], ["active", "=", true]],
       fields: ["id", "display_name", "default_code", "list_price", "standard_price", "taxes_id"],

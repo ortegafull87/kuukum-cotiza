@@ -100,6 +100,6 @@ export function diagText(d) {
     "APP", ...Object.entries(d.app).map(([k, v]) => line(k, v)),
     "", "DATOS", ...Object.entries(d.datos).map(([k, v]) => line(k, v)),
     "", "DISPOSITIVO", ...Object.entries(d.dispositivo).map(([k, v]) => line(k, v)),
-    "", `ERRORES RECIENTES (${d.errores.length})`, ...d.errores.map((e) => `${e.fecha} · ${e.tipo || ""} ${e.ruta || ""} ${e.status ?? ""} ${e.mensaje || ""}`.replace(/\s+/g, " "))
+    "", `ERRORES RECIENTES (${d.errores.length})`, ...d.errores.map((e) => `${e.fecha} · ${e.tipo || ""} ${e.ruta || ""} ${e.status ?? ""} ${e.mensaje || ""}${e.requestId ? " · req " + e.requestId : ""}`.replace(/\s+/g, " "))
   ].join("\n");
 }

@@ -48,8 +48,9 @@ export async function onRequestPost({ request, env, data }) {
     if (clientId) await env.KK.put("ticketc:" + clientId, id);
   }
 
+  data.log.ticket = id;
   try {
-    const call = odoo(env);
+    const call = odoo(env, data.log);
     const attIds = [];
     for (const [i, f] of fotos.entries()) {
       const ext = f.mimetype === "image/png" ? "png" : "jpg";
@@ -114,7 +115,7 @@ function bodyHtml(t) {
       ["Clientes", `${val(datos.clientes)} (${val(datos.clientesDescargados)})`], ["Almacenamiento", `${val(datos.almacenamiento)} · localStorage ${val(datos.localStorage)}`],
       ["Llave del sello", datos.llaveSello], ["Errores de sync", (datos.erroresSync || d.erroresSync || []).map((e) => `${e.fecha} ${e.folio} ${e.error}`).join(" | ")]]) +
     `<h3 style="font-family:sans-serif;margin:18px 0 6px">Errores recientes (${errores.length})</h3>` +
-    `<pre style="font-family:monospace;font-size:12px;white-space:pre-wrap">${esc(errores.slice(-30).map((e) => `${e.fecha} · ${e.tipo || ""} ${e.ruta || ""} ${e.status ?? ""} ${e.mensaje || ""}`).join("\n") || "—")}</pre>` +
+    `<pre style="font-family:monospace;font-size:12px;white-space:pre-wrap">${esc(errores.slice(-30).map((e) => `${e.fecha} · ${e.tipo || ""} ${e.ruta || ""} ${e.status ?? ""} ${e.mensaje || ""}${e.requestId ? " · req " + e.requestId : ""}`).join("\n") || "—")}</pre>` +
     `<p style="font-family:sans-serif">Fotos adjuntas: ${t.fotos} · Diagnóstico completo: diagnostico-${t.id}.json</p>` +
     `<pre style="font-family:monospace">${esc(bloque)}</pre>`;
 }

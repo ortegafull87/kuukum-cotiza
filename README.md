@@ -69,6 +69,12 @@ npx wrangler pages dev public
 ```
 El login con Google no funciona en `localhost` a menos que lo agregues como origen y redirect en la credencial.
 
+### Logs del servidor
+- **En vivo**: `npx wrangler pages deployment tail --project-name kuukum-cotiza`, o en el panel: Workers & Pages → kuukum-cotiza → logs en tiempo real de Functions. Cada petición deja una línea JSON: `{ts, requestId, method, ruta, status, ms, usuario, folio?, odoo:[{modelo, metodo, ms, ok, error?}], error?}`.
+- **Historial**: Ajustes → **Registro del servidor** (`GET /api/errores`). Muestra los últimos 50 errores con status ≥ 500 o fallo de Odoo, guardados en KV (`errlog:…`, 30 días).
+- **Correlación**: toda respuesta lleva `x-request-id`, y los errores también lo traen en el cuerpo (`{error, requestId}`). En la app, los errores del servidor muestran "(ref 8c1f2a)". El `requestId` completo queda en `kk_errlog` y viaja en el diagnóstico de los reportes, así que un ticket se cruza con el log por ese código. Es la parte hexadecimal del `cf-ray` de Cloudflare.
+- No se registran la API key, cookies, sellos ni llaves, PDF, fotos ni datos personales. Del cliente solo queda su id de Odoo.
+
 ### Pruebas locales (sin tocar el Odoo real)
 ```bash
 npm run mock-odoo                      # Odoo simulado en :8069 (estado en memoria, GET /__state para inspeccionarlo)

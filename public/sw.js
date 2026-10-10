@@ -1,5 +1,5 @@
 // Service worker: guarda la app para usarla sin internet. La API nunca se cachea.
-const CACHE = "kuukum-cotiza-0.3.0";   // la cambia scripts/bump-version.mjs
+const CACHE = "kuukum-cotiza-0.3.1";   // la cambia scripts/bump-version.mjs
 const SHELL = ["/", "/index.html", "/styles.css", "/manifest.webmanifest",
   "/js/app.js", "/js/calc.js", "/js/canonical.js", "/js/catalog.js", "/js/store.js", "/js/pdf.js",
   "/vendor/jspdf.umd.min.js", "/vendor/jspdf.plugin.autotable.min.js", "/vendor/qrcode.js", "/vendor/jsQR.js", "/js/scanner.js", "/js/diagnostics.js",

@@ -1,6 +1,7 @@
 // Odoo simulado para pruebas locales: responde POST /json/2/<modelo>/<método> con los métodos que usa la app.
 // Uso: node scripts/mock-odoo.mjs [puerto]   (por defecto 8069)
-// Ayudas de prueba: GET /__state (todo el estado), POST /__set {model, id, vals} (p. ej. confirmar una cotización).
+// Ayudas de prueba: GET /__state (todo el estado), POST /__set {model, id, vals} (p. ej. confirmar una cotización),
+// POST /__fail {model, method, message} (la siguiente llamada a ese método falla con 500).
 import http from "node:http";
 
 const PORT = Number(process.argv[2]) || 8069;
@@ -24,6 +25,7 @@ const db = {
 };
 const seq = { n: 1000 };
 const calls = [];
+const fails = [];
 const rec = (model, id) => db[model].find((r) => r.id === id);
 const commercial = (id) => { let p = rec("res.partner", id); while (p && p.parent_id) p = rec("res.partner", p.parent_id); return p ? p.id : id; };
 const m2o = (model, id) => (id ? [id, (rec(model, id) || {}).name || (rec(model, id) || {}).display_name || ""] : false);
@@ -106,6 +108,7 @@ http.createServer(async (req, res) => {
   const send = (status, data) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(data)); };
   let raw = ""; for await (const ch of req) raw += ch;
   if (req.url === "/__state") return send(200, { ...db, calls });
+  if (req.url === "/__fail") { fails.push(JSON.parse(raw)); return send(200, true); }
   if (req.url === "/__set") { const { model, id, vals } = JSON.parse(raw); Object.assign(rec(model, id), vals); return send(200, true); }
   const m = req.url.match(/^\/json\/2\/([\w.]+)\/(\w+)$/);
   if (!m || req.method !== "POST") return send(404, { message: "Ruta no simulada: " + req.url });
@@ -114,6 +117,8 @@ http.createServer(async (req, res) => {
   const body = raw ? JSON.parse(raw) : {};
   calls.push({ model, method, body: method === "create" && model === "ir.attachment" ? { n: body.vals_list.length } : body });
   try {
+    const f = fails.findIndex((x) => x.model === model && x.method === method);
+    if (f >= 0) err(500, fails.splice(f, 1)[0].message || "Fallo simulado");
     if (!db[model]) err(404, "Modelo no simulado: " + model);
     if (!METHODS[method]) err(404, "Método no simulado: " + method);
     send(200, METHODS[method](model, body));

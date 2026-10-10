@@ -22,7 +22,8 @@ export async function onRequestPost({ request, env, data }) {
   if (!allowedEmails(env, config).has(autor)) return fail("El autor de la cotización no tiene acceso", 403);
   if ((await sealFor(env, autor, q, t)) !== q.sello) return fail("El sello no coincide con el contenido. No se sincronizó.", 422);
 
-  const call = odoo(env);
+  data.log.folio = folioVisible(q.folio, rev);
+  const call = odoo(env, data.log);
   const syncKey = "sync:" + q.uuid;
   const sealKey = "seal:" + String(q.folio).toUpperCase();
   try {
@@ -30,6 +31,7 @@ export async function onRequestPost({ request, env, data }) {
 
     if (!rec) {
       const vals = await orderVals(env, call, config, q);
+      data.log.cliente = vals.partner_id;
       const [id] = await call("sale.order", "create", { vals_list: [vals] });
       const [{ name }] = await call("sale.order", "read", { ids: [id], fields: ["name"] });
       rec = { id, name, partnerId: vals.partner_id, enviada: false, rev };
@@ -50,6 +52,7 @@ export async function onRequestPost({ request, env, data }) {
       const prev = prevSeal && prevSeal.snapshot;
       const mismo = prev && prev.cliente === q.cliente.nombre && last10(prev.tel) === last10(q.cliente.tel);
       const vals = await orderVals(env, call, config, q, mismo ? rec.partnerId : null);
+      data.log.cliente = vals.partner_id;
       await call("sale.order", "write", {
         ids: [rec.id],
         vals: { ...vals, order_line: [[5, 0, 0], ...vals.order_line] }

@@ -8,7 +8,7 @@ import { collectDiagnostics, diagText } from "./diagnostics.js";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.3.1";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -130,7 +130,8 @@ async function applyUpdate() {
   location.reload();
 }
 
-async function refresh() {
+// manual: lo pidió el usuario (Actualizar catálogo y clientes) y debe enterarse si falla.
+async function refresh(manual = false) {
   if (!navigator.onLine) return;
   try {
     const me = await api("me");
@@ -148,6 +149,7 @@ async function refresh() {
       if (!S.user) { go("/login"); return; }
       S.authExpired = true; render();
     }
+    if (manual) throw e;
   }
 }
 async function runSync() {
@@ -173,6 +175,7 @@ function render() {
   if (r.startsWith("/nueva")) return renderWizard();
   if (r.startsWith("/cotizacion/")) return renderDetail(decodeURIComponent(r.split("/")[2]));
   if (r.startsWith("/ajustes")) return renderSettings();
+  if (r.startsWith("/registro")) return renderServerLog();
   if (r.startsWith("/verificar")) return renderVerify(r.split("/").slice(2).map(decodeURIComponent));
   return renderList();
 }
@@ -616,6 +619,10 @@ function renderSettings() {
           <div class="muted small">Sesión: ${esc(S.user.email)}</div>
           <button class="pill danger block" data-act="logout">Cerrar sesión</button>
         </div>
+        <div class="card"><h3>Registro del servidor</h3>
+          <div class="muted small">Últimos errores de la API y de Odoo, con su código de referencia.</div>
+          <button class="pill soft block" data-act="nav" data-to="/registro">Ver registro del servidor</button>
+        </div>
         <div class="card"><h3>Versión</h3>
           <div class="kv"><span>Cotiza App</span><span class="num">${APP_VERSION}</span></div>
           ${S.updateTo ? `<div class="muted small">Disponible: ${esc(S.updateTo)}</div>` : ""}
@@ -630,6 +637,20 @@ function renderSettings() {
       S.cfg = await api("config", { method: "PUT", body }); ls.set("config", S.cfg); toast("Ajustes guardados");
     }, "Guardando…");
   });
+}
+
+// ---------- Registro del servidor ----------
+function renderServerLog() {
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/ajustes" aria-label="Volver">${I.back}</button><h1>Registro del servidor</h1></header>
+      <main class="content">
+        <div class="muted small">Errores con status 500 o más y fallos de Odoo de los últimos 30 días. El código <span class="num">req</span> es el mismo que aparece en "(ref …)" y en los reportes.</div>
+        <button class="pill soft block" data-act="loadServerLog" id="slbtn">Actualizar</button>
+        <div id="slist"></div>
+      </main>
+    </div>`;
+  ACT.loadServerLog(document.getElementById("slbtn"));
 }
 
 // ---------- Verificar ----------
@@ -862,6 +883,21 @@ const ACT = {
     },
     onManual: () => { const m = document.getElementById("vmanual"); if (m) m.open = true; }
   }),
+  loadServerLog: (el) => {
+    const out = document.getElementById("slist");
+    if (!navigator.onLine) { out.innerHTML = `<div class="notice info">Sin internet. El registro vive en el servidor.</div>`; return; }
+    return withLoading(el, async () => {
+      const { errores } = await api("errores");
+      if (!document.getElementById("slist")) return;
+      out.innerHTML = errores.length ? errores.map((e) => `
+        <div class="logrow">
+          <div class="kv small"><span>${new Date(e.ts).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "medium" })}</span><span class="st ${e.status >= 500 ? "err" : "pend"}">${e.status}</span></div>
+          <div class="num small">${esc(e.method)} ${esc(e.ruta)}${e.folio ? " · " + esc(e.folio) : ""}${e.ticket ? " · " + esc(e.ticket) : ""}</div>
+          <div>${esc(e.mensaje)}</div>
+          <div class="muted small num">${esc(e.usuario || "sin sesión")} · req ${esc(e.requestId)}</div>
+        </div>`).join("") : `<div class="empty">Sin errores registrados. 🎉</div>`;
+    }, "Cargando…");
+  },
   applyUpdate: (el) => withLoading(el, applyUpdate, "Actualizando…"),
   checkUpdate: (el) => withLoading(el, async () => {
     if (!navigator.onLine) return toast("Sin internet");
@@ -873,7 +909,7 @@ const ACT = {
   lf: (el) => { S.listFilter = el.dataset.v; renderList(); },
   reload: (el) => {
     if (!navigator.onLine) return toast("Sin internet");
-    return withLoading(el, async () => { await refresh(); toast("Catálogo y clientes al día"); if (route().startsWith("/ajustes")) renderSettings(); }, "Actualizando…");
+    return withLoading(el, async () => { await refresh(true); toast("Catálogo y clientes al día"); if (route().startsWith("/ajustes")) renderSettings(); }, "Actualizando…");
   },
   verify: (el) => withLoading(el, doVerify, "Verificando…"),
   logout: async (el) => {

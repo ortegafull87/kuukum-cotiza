@@ -35,10 +35,18 @@ export async function api(path, opts = {}) {
     throw e;
   }
   let data = null; try { data = await r.json(); } catch {}
-  if (!r.ok) logError({ tipo: "api", ruta, status: r.status, mensaje: (data && data.error) || "Error " + r.status });
+  // requestId: cruza este error con el log del servidor (wrangler tail y Ajustes → Registro del servidor).
+  const requestId = (data && data.requestId) || r.headers.get("x-request-id") || "";
+  if (!r.ok) logError({ tipo: "api", ruta, status: r.status, mensaje: (data && data.error) || "Error " + r.status, ...(requestId ? { requestId } : {}) });
   // 403 con auth:true = el correo perdió acceso; otros 403 son reglas de negocio.
   if (r.status === 401 || (r.status === 403 && data && data.auth)) throw new AuthError((data && data.error) || "Sin sesión");
-  if (!r.ok) { const e = new Error((data && data.error) || "Error " + r.status); e.status = r.status; throw e; }
+  if (!r.ok) {
+    const msg = (data && data.error) || "Error " + r.status;
+    // Errores del servidor u Odoo llevan un código corto para buscarlos en el registro: "(ref 8c1f2a)".
+    const e = new Error(r.status >= 500 && requestId ? `${msg} (ref ${requestId.slice(0, 6)})` : msg);
+    e.status = r.status; e.requestId = requestId;
+    throw e;
+  }
   return data;
 }
 

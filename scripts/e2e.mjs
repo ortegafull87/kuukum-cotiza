@@ -1,5 +1,5 @@
 // Prueba e2e de la API contra wrangler + Odoo simulado (ver README, "Pruebas locales").
-// Uso: node scripts/e2e.mjs [http://localhost:8788] [http://localhost:8069]
+// Uso: node scripts/e2e.mjs [http://localhost:8788] [http://localhost:8069] [archivo con la salida de wrangler]
 import { makeSession, sealFor } from "../lib/core.js";
 import { calc } from "../public/js/calc.js";
 import { canonical } from "../public/js/canonical.js";
@@ -8,6 +8,7 @@ import { qrText } from "../public/js/pdf.js";
 
 const APP = process.argv[2] || "http://localhost:8788";
 const ODOO = process.argv[3] || "http://localhost:8069";
+const WRANGLER_LOG = process.argv[4] || "";
 const env = { SESSION_SECRET: "dev", SEAL_SECRET: "dev" };
 const EMAIL = "ortegafull87@gmail.com";
 const cookie = "kk_session=" + await makeSession(env, EMAIL, "Victor");
@@ -18,7 +19,7 @@ async function api(path, body, ck = cookie) {
   const r = await fetch(APP + "/api/" + path, {
     method: body ? "POST" : "GET", headers: { cookie: ck, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined
   });
-  return { status: r.status, data: await r.json().catch(() => null) };
+  return { status: r.status, data: await r.json().catch(() => null), rid: r.headers.get("x-request-id") };
 }
 const state = async () => (await fetch(ODOO + "/__state")).json();
 const setOdoo = (model, id, vals) => fetch(ODOO + "/__set", { method: "POST", body: JSON.stringify({ model, id, vals }) });
@@ -161,6 +162,35 @@ ok(r.status === 400, "pantalla inválida -> 400");
 const intruso = "kk_session=" + await makeSession(env, "intruso@ejemplo.com", "X");
 r = await api("clientes", null, intruso);
 ok(r.status === 403 && r.data.auth === true, "correo sin acceso -> 403 auth:true");
+
+// 10. Logs del servidor y correlación
+{
+  let r = await api("clientes");
+  ok(/^[0-9a-f]{8,}$/.test(r.rid || ""), "toda respuesta trae x-request-id", r.rid);
+  r = await api("verificar");
+  ok(r.status === 400 && r.data.requestId === r.rid, "error con {error, requestId}", r.data);
+  // Error de Odoo provocado: sale.order.create falla
+  await fetch(ODOO + "/__fail", { method: "POST", body: JSON.stringify({ model: "sale.order", method: "create", message: "Odoo dice: campo inválido" }) });
+  const fq = await quote();
+  r = await api("sync", { quote: fq });
+  ok(r.status === 502 && r.data.requestId === r.rid && /campo inválido/.test(r.data.error), "error de Odoo -> 502 con requestId", r.data);
+  await new Promise((res) => setTimeout(res, 300));
+  const { data } = await api("errores");
+  const e = data.errores.find((x) => x.requestId === r.rid);
+  ok(e && e.ruta === "/api/sync" && e.status === 502 && e.usuario === EMAIL && e.folio === fq.folio && /campo inválido/.test(e.mensaje), "Registro del servidor (/api/errores) lo muestra", e);
+  ok(data.errores[0] && data.errores[0].requestId === r.rid, "el más reciente va primero");
+  if (WRANGLER_LOG) {
+    const { readFileSync } = await import("node:fs");
+    await new Promise((res) => setTimeout(res, 300));
+    const line = readFileSync(WRANGLER_LOG, "utf8").split("\n").map((l) => { try { return JSON.parse(l.slice(l.indexOf("{"))); } catch { return null; } })
+      .find((l) => l && l.requestId === r.rid);
+    ok(line && line.method === "POST" && line.status === 502 && typeof line.ms === "number" && line.folio === fq.folio && line.cliente === 1 &&
+      line.odoo.some((o) => o.modelo === "sale.order" && o.metodo === "create" && o.ok === false && /campo inválido/.test(o.error)) &&
+      line.odoo.every((o) => typeof o.ms === "number"), "línea JSON en el log con odoo[] medido", line);
+    const raw = JSON.stringify(line || {});
+    ok(!raw.includes(fq.sello) && !/bearer|kk_session|Grupo Scouts|442 111|ana@scouts/i.test(raw), "el log no lleva sello, llave, cookie ni datos del cliente");
+  } else console.log("  (sin archivo de log de wrangler: se omite la revisión de la línea JSON)");
+}
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodo bien");
 process.exit(fails ? 1 : 0);
