@@ -2,6 +2,7 @@
 // Uso: node scripts/mock-odoo.mjs [puerto]   (por defecto 8069)
 // Ayudas de prueba: GET /__state (todo el estado), POST /__set {model, id, vals} (p. ej. confirmar una cotización),
 // POST /__fail {model, method, message} (la siguiente llamada a ese método falla con 500),
+// POST /__unlink {model, id} (borra un registro, como eliminarlo en Odoo),
 // POST /__attach {mode: "empty"} (el siguiente ir.attachment queda en 0 bytes, como pasaba con `datas`).
 // ir.attachment se comporta como Odoo 19.3: `datas` no existe (se ignora) y `raw` llega en base64 y se decodifica.
 import http from "node:http";
@@ -28,6 +29,7 @@ const db = {
 const seq = { n: 1000 };
 const calls = [];
 const fails = [];
+const now = () => new Date().toISOString().slice(0, 19).replace("T", " ");   // write_date como Odoo (UTC, sin zona)
 let attachMode = null;
 const rec = (model, id) => db[model].find((r) => r.id === id);
 const commercial = (id) => { let p = rec("res.partner", id); while (p && p.parent_id) p = rec("res.partner", p.parent_id); return p ? p.id : id; };
@@ -79,9 +81,10 @@ const METHODS = {
   search_read: (m, b) => db[m].filter((r) => match(m, r, b.domain)).slice(0, b.limit || 1e9).map((r) => out(m, r, b.fields)),
   search: (m, b) => db[m].filter((r) => match(m, r, b.domain)).slice(0, b.limit || 1e9).map((r) => r.id),
   search_count: (m, b) => db[m].filter((r) => match(m, r, b.domain)).length,
-  read: (m, b) => b.ids.map((id) => rec(m, id)).filter(Boolean).map((r) => out(m, r, b.fields)),
+  // Como Odoo: read de un id que no existe lanza MissingError (no regresa una lista vacía).
+  read: (m, b) => b.ids.map((id) => rec(m, id) || err(422, `Record does not exist or has been deleted. (Record: ${m}(${id},))`)).map((r) => out(m, r, b.fields)),
   create: (m, b) => b.vals_list.map((v) => {
-    const r = { id: ++seq.n, active: true, ...v };
+    const r = { id: ++seq.n, active: true, write_date: now(), ...v };
     if (m === "sale.order") { r.name = "S" + String(r.id).padStart(5, "0"); r.state = "draft"; delete r.order_line; db[m].push(r); applyLines(r, v.order_line); return r.id; }
     if (m === "res.partner") r.parent_id = false;
     if (m === "mail.mail") r.state = "outgoing";
@@ -98,13 +101,13 @@ const METHODS = {
       const r = rec(m, id);
       if (m === "sale.order" && ["sale", "cancel"].includes(r.state) && b.vals.order_line) err(422, "No se puede modificar un pedido confirmado");
       const { order_line, ...rest } = b.vals;
-      Object.assign(r, rest);
+      Object.assign(r, rest, { write_date: now() });
       if (m === "sale.order" && order_line) applyLines(r, order_line);
     }
     return true;
   },
-  action_quotation_sent: (m, b) => { for (const id of b.ids) { const r = rec(m, id); if (r.state !== "draft") err(422, "Only draft orders can be marked as sent directly."); r.state = "sent"; } return true; },
-  action_draft: (m, b) => { for (const id of b.ids) { const r = rec(m, id); if (["cancel", "sent"].includes(r.state)) r.state = "draft"; } return true; },
+  action_quotation_sent: (m, b) => { for (const id of b.ids) { const r = rec(m, id); if (r.state !== "draft") err(422, "Only draft orders can be marked as sent directly."); r.state = "sent"; r.write_date = now(); } return true; },
+  action_draft: (m, b) => { for (const id of b.ids) { const r = rec(m, id); if (["cancel", "sent"].includes(r.state)) { r.state = "draft"; r.write_date = now(); } } return true; },
   message_post: (m, b) => b.ids.map((id) => {
     const msg = { id: ++seq.n, model: m, res_id: id, body: b.body, body_is_html: !!b.body_is_html, subject: b.subject || false,
       partner_ids: b.partner_ids || [], attachment_ids: b.attachment_ids || [], message_type: b.message_type, subtype_xmlid: b.subtype_xmlid,
@@ -119,9 +122,10 @@ http.createServer(async (req, res) => {
   const send = (status, data) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(data)); };
   let raw = ""; for await (const ch of req) raw += ch;
   if (req.url === "/__state") return send(200, { ...db, calls });
+  if (req.url === "/__unlink") { const { model, id } = JSON.parse(raw); db[model] = db[model].filter((r) => r.id !== id); return send(200, true); }
   if (req.url === "/__attach") { attachMode = JSON.parse(raw).mode || null; return send(200, true); }
   if (req.url === "/__fail") { fails.push(JSON.parse(raw)); return send(200, true); }
-  if (req.url === "/__set") { const { model, id, vals } = JSON.parse(raw); Object.assign(rec(model, id), vals); return send(200, true); }
+  if (req.url === "/__set") { const { model, id, vals } = JSON.parse(raw); Object.assign(rec(model, id), vals, { write_date: now() }); return send(200, true); }
   const m = req.url.match(/^\/json\/2\/([\w.]+)\/(\w+)$/);
   if (!m || req.method !== "POST") return send(404, { message: "Ruta no simulada: " + req.url });
   if (!/^bearer .+/i.test(req.headers.authorization || "")) return send(401, { message: "Sin API key" });

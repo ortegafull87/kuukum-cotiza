@@ -234,3 +234,12 @@ body.has-update .login { padding-top: calc(84px + var(--safe-top)); }
 body:has(#why:not([hidden])) #toast { bottom: calc(176px + env(safe-area-inset-bottom)); }
 /* Ajustes no tiene barra fija abajo: solo el margen del indicador de inicio. */
 .content.settings { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+
+/* Estado en Odoo (v0.4) */
+.st.sale { background: var(--accent); color: var(--on-accent); }
+.st.cancel { color: var(--error); background: rgba(196, 64, 64, .10); }
+.st.gone { color: var(--muted); border-color: var(--line); }
+.qcard.apagada { opacity: .55; }
+.st-btn { border: 0; background: none; padding: 0; min-height: 44px; display: inline-flex; align-items: center; }
+.linkbtn { border: 0; background: none; color: var(--muted); font-size: 15px; font-weight: 600; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
+.ptr { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; color: var(--muted); font-size: 14px; font-weight: 600; }

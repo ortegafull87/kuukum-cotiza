@@ -1,5 +1,5 @@
 import { json, fail, sealFor, allowedEmails } from "../../lib/core.js";
-import { odoo, getOrCreate, markSent } from "../../lib/odoo.js";
+import { odoo, getOrCreate, markSent, leerOrden, MSG_ESTADO } from "../../lib/odoo.js";
 import { calc, money } from "../../public/js/calc.js";
 import { folioVisible, cleanSeal } from "../../public/js/canonical.js";
 
@@ -42,9 +42,9 @@ export async function onRequestPost({ request, env, data }) {
       if (n > prevN) await env.KK.put("folio:" + autor, String(n));
     } else if (rev > (rec.rev || 1)) {
       // Revisión: solo si en Odoo sigue siendo cotización (borrador o enviada).
-      const [so] = await call("sale.order", "read", { ids: [rec.id], fields: ["state", "amount_total"] });
-      if (!so) return fail("La cotización ya no existe en Odoo. Duplícala para hacer una nueva.", 409);
-      if (so.state === "sale" || so.state === "cancel") return fail(YA_PEDIDO, 409);
+      const so = await leerOrden(call, rec.id, ["state", "amount_total"]);
+      if (!so) return json({ error: MSG_ESTADO.eliminada, codigo: "eliminada" }, 409);
+      if (so.state === "sale" || so.state === "cancel") return json(so.state === "cancel" ? { error: MSG_ESTADO.cancel, codigo: "cancel" } : { error: YA_PEDIDO, codigo: "sale" }, 409);
       if (so.state === "sent") await call("sale.order", "action_draft", { ids: [rec.id] });
 
       const prevSeal = await env.KK.get(sealKey, "json");
@@ -70,13 +70,17 @@ export async function onRequestPost({ request, env, data }) {
     }
 
     // Marcar como "Cotización enviada" cuando se mandó el PDF (de la revisión vigente).
+    // Odoo manda: solo se marca si sigue en borrador. Si ya está enviada, confirmada, cancelada o eliminada no se toca
+    // (el fallback de markSent escribiría state=sent y "des-cancelaría" la orden).
     if (q.enviada && !rec.enviada && rev >= (rec.rev || 1)) {
-      await markSent(call, rec.id);
+      const so = await leerOrden(call, rec.id, ["state"]);
+      if (so && so.state === "draft") await markSent(call, rec.id);
       rec.enviada = true;
+      rec.estadoOdoo = so ? (so.state === "draft" ? "sent" : so.state) : "eliminada";
       await env.KK.put(syncKey, JSON.stringify(rec));
     }
 
-    return json({ id: rec.id, name: rec.name, enviada: rec.enviada, rev: rec.rev || 1 });
+    return json({ id: rec.id, name: rec.name, enviada: rec.enviada, rev: rec.rev || 1, ...(rec.estadoOdoo ? { estadoOdoo: rec.estadoOdoo } : {}) });
   } catch (e) {
     return fail(e.message, 502);
   }

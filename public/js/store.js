@@ -1,6 +1,6 @@
 // Datos locales, llamadas a la API, cola de sincronización y sello.
-import { calc } from "./calc.js?v=0.3.5";
-import { canonical, sealFromBytes } from "./canonical.js?v=0.3.5";
+import { calc } from "./calc.js?v=0.4.0";
+import { canonical, sealFromBytes } from "./canonical.js?v=0.4.0";
 
 // ---------- localStorage ----------
 export const ls = {
@@ -44,7 +44,7 @@ export async function api(path, opts = {}) {
     const msg = (data && data.error) || "Error " + r.status;
     // Errores del servidor u Odoo llevan un código corto para buscarlos en el registro: "(ref 8c1f2a)".
     const e = new Error(r.status >= 500 && requestId ? `${msg} (ref ${requestId.slice(0, 6)})` : msg);
-    e.status = r.status; e.requestId = requestId;
+    e.status = r.status; e.requestId = requestId; e.codigo = (data && data.codigo) || "";
     throw e;
   }
   return data;
@@ -133,6 +133,7 @@ export async function syncAll(onChange, { pdfBase64 } = {}) {
         let cur = quotes.get(q.uuid);
         if (!cur) continue;
         cur.odoo = { id: r.id, name: r.name, enviada: r.enviada, rev: r.rev };
+        if (r.estadoOdoo) marcarEstado(cur, r.estadoOdoo, cur.estadoFecha);
         cur.sync = "ok"; cur.syncError = "";
         if (r.rev >= revOf(cur)) delete cur.revPrev;
         quotes.put(cur); ok++;
@@ -145,6 +146,7 @@ export async function syncAll(onChange, { pdfBase64 } = {}) {
         const cur = quotes.get(q.uuid);
         if (!cur) continue;
         cur.sync = e.status === 409 ? "conflicto" : "error"; cur.syncError = e.message;
+        if (e.codigo === "cancel" || e.codigo === "eliminada" || e.codigo === "sale") marcarEstado(cur, e.codigo, cur.estadoFecha);
         logSyncError(cur, e.message);
         quotes.put(cur); err++;
       }
@@ -170,9 +172,41 @@ async function sendCorreo(q, pdfBase64) {
     const cur = quotes.get(q.uuid);
     cur.correoError = e.message;
     if (e.status === 403) cur.correoPend = null;          // no cumple la regla de cliente cautivo: no reintentar
+    if (e.codigo === "cancel" || e.codigo === "eliminada") { cur.correoPend = null; marcarEstado(cur, e.codigo, cur.estadoFecha); }
     quotes.put(cur);
     return false;
   }
+}
+
+// ---------- Estado en Odoo (Odoo manda: la app solo lo lee) ----------
+const ESTADO_CADA = 5 * 60000;
+function marcarEstado(q, estado, fecha) {
+  q.estadoOdoo = estado; q.estadoFecha = fecha || null; q.estadoRevisado = new Date().toISOString();
+}
+// Consulta el estado en Odoo de las cotizaciones ya subidas. Máximo una vez cada 5 min salvo force
+// (jalar la lista para refrescar o tocar el estado en Detalle). Devuelve cuántas cambiaron.
+let consultando = null;
+export async function refreshEstados({ force = false } = {}) {
+  if (!navigator.onLine) return 0;
+  if (!force && Date.now() - (ls.get("estadoAt", 0) || 0) < ESTADO_CADA) return 0;
+  if (consultando) return consultando;
+  ls.set("estadoAt", Date.now());   // se cuenta el intento: si Odoo falla tampoco se reintenta en cada repintado
+  consultando = (async () => {
+    const cand = quotes.all().filter((q) => q.sync === "ok" && q.odoo && q.estadoOdoo !== "eliminada").map((q) => q.uuid);
+    let cambios = 0;
+    for (let i = 0; i < cand.length; i += 200) {
+      const { estados } = await api("estado", { method: "POST", body: { uuids: cand.slice(i, i + 200) } });
+      for (const [uuid, s] of Object.entries(estados || {})) {
+        const cur = quotes.get(uuid);
+        if (!cur) continue;
+        if (cur.estadoOdoo !== s.estado) cambios++;
+        marcarEstado(cur, s.estado, s.fecha);
+        quotes.put(cur);
+      }
+    }
+    return cambios;
+  })().finally(() => { consultando = null; });
+  return consultando;
 }
 
 // ---------- Bandeja de salida (reportes hechos sin internet) ----------

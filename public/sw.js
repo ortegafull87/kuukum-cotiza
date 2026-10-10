@@ -1,5 +1,5 @@
 // Service worker: guarda la app para usarla sin internet. La API nunca se cachea.
-const VERSION = "0.3.5";   // la cambia scripts/bump-version.mjs (igual que version.json, APP_VERSION y los ?v= de index.html y los módulos)
+const VERSION = "0.4.0";   // la cambia scripts/bump-version.mjs (igual que version.json, APP_VERSION y los ?v= de index.html y los módulos)
 const CACHE = "kuukum-cotiza-" + VERSION;
 const V = "?v=" + VERSION;
 // / y no /index.html: Cloudflare redirige /index.html -> / (308) y Safari rechaza una respuesta con redirección para navegar.

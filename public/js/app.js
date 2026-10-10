@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js?v=0.3.5";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.3.5";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.3.5";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js?v=0.3.5";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.3.5";
-import { openScanner, closeScanner } from "./scanner.js?v=0.3.5";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.3.5";
+import { calc, money, r2, parseMoney } from "./calc.js?v=0.4.0";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.0";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.0";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.0";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.0";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.0";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.0";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.3.5";
+const APP_VERSION = "0.4.0";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -44,7 +44,7 @@ const S = {
   clientes: (ls.get("clientes", null) || { clientes: [] }).clientes,
   draft: ls.get("draft", null),
   authExpired: false,
-  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false, prevRoute: "",
+  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false, prevRoute: "", verOcultas: false,
   updateTo: null, sending: false
 };
 const $app = document.getElementById("app");
@@ -106,7 +106,7 @@ async function boot() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   // Actualizaciones: al abrir, al volver a primer plano (iOS no recarga la app instalada) y cada 30 min.
   checkUpdate();
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { checkUpdate(); checkEstados(); } });
   setInterval(checkUpdate, 30 * 60000);
   window.addEventListener("hashchange", render);
   window.addEventListener("online", () => { refresh(); renderPill(); });
@@ -116,6 +116,33 @@ async function boot() {
   if (!hadUser && navigator.onLine && !route().startsWith("/login")) await refresh();
   render();
   if (hadUser) refresh();
+}
+
+// ---------- Estado en Odoo ----------
+// Consulta (máx. una vez cada 5 min) y repinta si algo cambió y se está viendo la lista o un detalle.
+function checkEstados(force = false) {
+  return refreshEstados({ force }).then((n) => {
+    if (n && (route().startsWith("/cotizaciones") || route().startsWith("/cotizacion/"))) render();
+    return n;
+  }).catch((e) => { if (force) throw e; return 0; });
+}
+// Odoo manda: según el estado allá, qué muestra y qué permite la app. draft/sent: como siempre.
+const PERMITE_TODO = { reenviar: true, texto: true, editar: true, correo: true, abrir: true, ocultar: false };
+function estadoInfo(q) {
+  switch (q.estadoOdoo) {
+    case "sale": return { chip: `<span class="st sale">Pedido confirmado</span>`, apagada: false, permite: { ...PERMITE_TODO, editar: false, correo: false } };
+    case "cancel": return { chip: `<span class="st cancel">Cancelada en Odoo</span>`, apagada: true,
+      permite: { reenviar: false, texto: false, editar: false, correo: false, abrir: true, ocultar: true } };
+    case "eliminada": return { chip: `<span class="st gone">Eliminada en Odoo</span>`, apagada: true,
+      permite: { reenviar: false, texto: false, editar: false, correo: false, abrir: false, ocultar: true } };
+    default: return { chip: "", apagada: false, permite: PERMITE_TODO };
+  }
+}
+const fechaCorta = (iso) => new Date(iso).toLocaleDateString("es-MX", { day: "numeric", month: "short" }).replace(".", "");
+function avisoEstado(q) {
+  if (q.estadoOdoo === "cancel") return `Esta cotización se canceló en Odoo${q.estadoFecha ? " el " + fechaCorta(q.estadoFecha) : ""}. Para cotizar de nuevo usa Duplicar.`;
+  if (q.estadoOdoo === "eliminada") return "Esta cotización se eliminó en Odoo. Para cotizar de nuevo usa Duplicar.";
+  return "";
 }
 
 // ---------- Actualizaciones ----------
@@ -183,6 +210,7 @@ async function runSync() {
     { pdfBase64: (q) => pdfBase64(q, S.cfg || {}) });
   if (r && r.auth) { S.authExpired = true; render(); }
   if (r && !r.skipped && !r.auth) {
+    if (!r.err) checkEstados();
     const ids = await flushOutbox();
     if (ids.length) toast(ids.length === 1 ? `Reporte ${ids[0]} enviado. Gracias.` : `Reportes ${ids.join(", ")} enviados. Gracias.`, 3500);
   }
@@ -527,18 +555,23 @@ function drawSheet(keepFocus) {
 
 // ---------- Lista ----------
 function statusChip(q) {
+  if (q.estadoOdoo === "cancel" || q.estadoOdoo === "eliminada") return estadoInfo(q).chip;
   if (q.sync === "conflicto") return `<span class="st err">Ya es pedido</span>`;
   if (q.sync === "error") return `<span class="st err">Error al subir</span>`;
   if (!q.odoo) return `<span class="st pend">Por subir</span>`;
   if (revOf(q) > (q.odoo.rev || 1)) return `<span class="st pend">${esc(q.odoo.name)} · R${revOf(q)} por subir</span>`;
   if (q.enviada && !q.odoo.enviada) return `<span class="st pend">${esc(q.odoo.name)} · por marcar</span>`;
+  if (q.estadoOdoo === "sale") return estadoInfo(q).chip;
   return `<span class="st ok">${esc(q.odoo.name)} ✓</span>`;
 }
 function renderList() {
   const all = quotes.all();
   const N = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const qq = N(S.listQuery);
+  const ocultas = all.filter((q) => q.oculta).length;
+  if (!ocultas) S.verOcultas = false;
   const list = all.filter((q) => {
+    if (!!q.oculta !== S.verOcultas) return false;   // ocultar solo la quita de la lista en este teléfono
     if (S.listFilter === "pend" && !needsSync(q)) return false;
     if (S.listFilter === "env" && !q.enviada) return false;
     if (S.listFilter === "err" && q.sync !== "error") return false;
@@ -547,11 +580,12 @@ function renderList() {
   const d = S.draft;
   $app.innerHTML = `
     <div class="screen">
-      <header class="topbar"><img src="/img/logo.png" alt=""><h1>Cotizaciones</h1><span id="pill">${pillHtml()}</span>
+      <header class="topbar"><img src="/img/logo.png" alt=""><h1>${S.verOcultas ? "Ocultas" : "Cotizaciones"}</h1><span id="pill">${pillHtml()}</span>
         <button class="icon-btn" data-act="nav" data-to="/ajustes" aria-label="Ajustes">${I.gear}</button></header>
       <main class="content">
+        <div id="ptr" class="ptr" role="status" aria-live="polite" hidden></div>
         ${authBanner()}
-        ${d && (d.cliente.nombre || d.items.length) ? `<button class="qcard" data-act="nav" data-to="/nueva" style="background:var(--accent-soft);border-radius:var(--r);padding:14px">
+        ${d && (d.cliente.nombre || d.items.length) && !S.verOcultas ? `<button class="qcard" data-act="nav" data-to="/nueva" style="background:var(--accent-soft);border-radius:var(--r);padding:14px">
           <div class="r1"><span class="folio">${d.editOf ? "Editando " + esc(folioDe(d)) : "Borrador en curso"}</span><span class="st draft">Paso ${d.step} de 4</span></div>
           <div class="muted">${esc(d.cliente.nombre || "Sin cliente")} · ${d.items.length} producto(s)</div></button>` : ""}
         <label class="search">${I.search}<input id="lq" placeholder="Buscar cliente o folio" value="${esc(S.listQuery)}" autocomplete="off"></label>
@@ -559,15 +593,18 @@ function renderList() {
           `<button class="chip ${S.listFilter === k ? "on" : ""}" data-act="lf" data-v="${k}">${v}</button>`).join("")}</div>
         <div id="qlist">${list.length ? list.map((q) => {
           const t = calc(q), pzs = q.items.reduce((a, i) => a + Number(i.q), 0);
-          return `<button class="qcard" data-act="nav" data-to="/cotizacion/${q.uuid}">
+          return `<button class="qcard ${estadoInfo(q).apagada ? "apagada" : ""}" data-act="nav" data-to="/cotizacion/${q.uuid}">
             <div class="r1"><span class="folio">${esc(q.folio)}${revOf(q) > 1 ? ` · R${revOf(q)}` : ""}</span>${statusChip(q)}</div>
             <div class="muted">${esc(q.cliente.nombre)} · ${canalName(q.canal)}</div>
             <div class="r3"><span class="muted small">${pzs} pza${pzs === 1 ? "" : "s"} · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total">${money(t.total)}</span></div>
           </button>`;
         }).join("") : `<div class="empty">${all.length ? "Nada con ese filtro." : "Aún no hay cotizaciones. Toca <b>Nueva</b> para empezar."}</div>`}</div>
+        ${S.verOcultas ? `<button class="linkbtn" data-act="verOcultas" data-v="0">Volver a todas</button>`
+          : ocultas ? `<button class="linkbtn" data-act="verOcultas" data-v="1">Ver ocultas (${ocultas})</button>` : ""}
       </main>
       ${tabbar("lista")}
     </div>`;
+  checkEstados();
 }
 
 // ---------- Detalle ----------
@@ -575,18 +612,23 @@ function renderDetail(uuid) {
   const q = quotes.get(uuid);
   if (!q) return go("/cotizaciones");
   const t = calc(q);
-  const odooLink = q.odoo && S.user.odooUrl ? `${S.user.odooUrl}/odoo/sales/${q.odoo.id}` : "";
+  const { permite } = estadoInfo(q);
+  const aviso = avisoEstado(q);
+  const odooLink = q.odoo && S.user.odooUrl && permite.abrir ? `${S.user.odooUrl}/odoo/sales/${q.odoo.id}` : "";
+  // Tocar el estado consulta Odoo en ese momento (sin esperar los 5 min).
+  const chip = q.odoo && q.sync !== "error" ? `<button class="st-btn" data-act="estado" aria-label="Consultar el estado en Odoo">${statusChip(q)}</button>` : statusChip(q);
   $app.innerHTML = `
     <div class="screen">
       <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver a cotizaciones">${I.back}</button>
         <h1 class="num">${esc(folioDe(q))}</h1><span id="pill">${pillHtml()}</span></header>
       <main class="content">
         <div class="card">
-          <div class="kv"><b style="font-size:18px">${esc(q.cliente.nombre)}</b>${statusChip(q)}</div>
+          <div class="kv"><b style="font-size:18px">${esc(q.cliente.nombre)}</b>${chip}</div>
+          ${aviso ? `<div class="notice">${aviso}</div>` : ""}
           <div class="muted small">${canalName(q.canal)} · ${new Date(q.fecha).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}${q.enviada ? " · Enviada" : " · Guardada"}</div>
           ${revOf(q) > 1 ? `<div class="muted small">Revisión ${revOf(q)}${(q.historial || []).map((h) => ` · R${h.rev} ${money(h.total)}`).join("")}</div>` : ""}
           ${q.sync === "error" ? `<div class="notice">No subió a Odoo: ${esc(q.syncError)}</div>` : ""}
-          ${q.sync === "conflicto" ? `<div class="notice">${esc(q.syncError)}</div>
+          ${q.sync === "conflicto" && !aviso ? `<div class="notice">${esc(q.syncError)}</div>
             <div class="grid2"><button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar como nueva</button>
               ${q.revPrev ? `<button class="pill ghost" data-act="undoRev" data-uuid="${q.uuid}">Descartar R${revOf(q)}</button>` : ""}</div>` : ""}
         </div>
@@ -600,13 +642,14 @@ function renderDetail(uuid) {
         </div>
         <div class="profit"><div><small>Tu ganancia</small><b>${money(t.ganancia)}</b></div>${marginBadge(t.margen)}</div>
         <div class="muted small num">${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(folioDe(q))} · ${formatSeal(q.sello)}</div>
-        <button class="pill block" data-act="resend" data-uuid="${q.uuid}">${q.enviada ? "Reenviar PDF" : "Enviar PDF"}</button>
-        ${correoDetalle(q)}
-        <div class="grid2">
-          ${q.sync === "conflicto" ? "" : `<button class="pill soft" data-act="edit" data-uuid="${q.uuid}">Editar</button>`}
-          <button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar</button>
-        </div>
-        <button class="pill soft block" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
+        ${permite.reenviar ? `<button class="pill block" data-act="resend" data-uuid="${q.uuid}">${q.enviada ? "Reenviar PDF" : "Enviar PDF"}</button>` : ""}
+        ${permite.correo ? correoDetalle(q) : ""}
+        ${q.sync !== "conflicto" && permite.editar
+          ? `<div class="grid2"><button class="pill soft" data-act="edit" data-uuid="${q.uuid}">Editar</button><button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar</button></div>`
+          : `<button class="pill soft block" data-act="dup" data-uuid="${q.uuid}">Duplicar</button>`}
+        ${aviso && q.sync === "conflicto" && q.revPrev ? `<button class="pill ghost block" data-act="undoRev" data-uuid="${q.uuid}">Descartar R${revOf(q)}</button>` : ""}
+        ${permite.texto ? `<button class="pill soft block" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>` : ""}
+        ${permite.ocultar || q.oculta ? `<button class="pill ghost block" data-act="ocultar" data-uuid="${q.uuid}" data-v="${q.oculta ? 0 : 1}">${q.oculta ? "Mostrar en la lista" : "Ocultar de la lista"}</button>` : ""}
         ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync" data-label="Subiendo…">Reintentar subida</button>` : ""}
         ${odooLink ? `<a class="pill ghost block" style="display:grid;place-items:center;text-decoration:none" href="${odooLink}" target="_blank" rel="noopener">Abrir ${esc(q.odoo.name)} en Odoo</a>` : ""}
         <button class="pill block" data-act="nav" data-to="/cotizaciones">Volver a cotizaciones</button>
@@ -659,7 +702,7 @@ function renderSettings() {
           <button class="pill soft block" data-act="reload">Actualizar catálogo y clientes</button>
           ${S.revisar.length ? `<details><summary class="small" style="min-height:40px;display:flex;align-items:center">${S.revisar.length} productos de Odoo ocultos por precio a revisar</summary>
             <div class="small muted" style="display:grid;gap:6px;padding-top:6px">${S.revisar.map((p) => `<div>${esc(p.n)} — <span class="num">${money(p.p)}</span></div>`).join("")}</div></details>` : ""}
-          <div class="muted small">Los cambios hechos directamente en Odoo no regresan a la app: si alguien edita allá, Odoo manda. Para cambiar una cotización desde aquí usa <b>Editar</b>, que crea una revisión (R2, R3…).</div>
+          <div class="muted small">La app refleja si en Odoo una cotización se confirmó, se canceló o se eliminó. Los cambios de productos o precios hechos allá no regresan a la app: Odoo manda. Para cambiar una cotización desde aquí usa <b>Editar</b>, que crea una revisión (R2, R3…).</div>
         </div>
         <div class="card"><h3>Ayuda</h3>
           <div class="muted small">¿Algo no funcionó como esperabas? Cuéntanos y lo revisamos.</div>
@@ -740,8 +783,10 @@ async function doVerify() {
       <div class="kv big"><span>Total vigente R${vigente}</span><span class="num">${money(total)}</span></div>
       <div class="small">El sello es auténtico, pero la cotización se actualizó después. Vale la revisión vigente.</div></div>`;
   };
-  const show = (ok, title, snap) => {
-    out.innerHTML = `<div class="verify ${ok ? "ok" : "bad"}"><b style="font-size:18px">${title}</b>${snap ? `
+  // Sello auténtico, pero en Odoo la cotización se canceló o se eliminó: no está vigente.
+  const noVigente = (e) => (e === "cancel" ? "⚠️ Cotización cancelada (no vigente)" : e === "eliminada" ? "⚠️ Cotización eliminada en Odoo (no vigente)" : "");
+  const show = (ok, title, snap, warn) => {
+    out.innerHTML = `<div class="verify ${warn ? "warn" : ok ? "ok" : "bad"}"><b style="font-size:18px">${title}</b>${snap ? `
       <div>${esc(snap.cliente)} · ${new Date(snap.fecha).toLocaleDateString("es-MX")}</div>
       ${snap.items.map((i) => `<div class="kv small"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
       <div class="kv big"><span>Total</span><span class="num">${money(snap.total)}</span></div>
@@ -750,14 +795,18 @@ async function doVerify() {
   const local = quotes.all().find((q) => q.folio === folio);
   if (local && local.sello === sello) {
     const t = calc(local);
-    return show(true, "✅ Auténtica" + (revOf(local) > 1 ? ` · R${revOf(local)}` : ""), { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total });
+    const nv = noVigente(local.estadoOdoo);
+    return show(true, (nv ? "✅ Sello auténtico · " + nv : "✅ Auténtica") + (revOf(local) > 1 ? ` · R${revOf(local)}` : ""), { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total }, !!nv);
   }
   const h = local && (local.historial || []).find((x) => x.sello === sello);
   if (h) return old(h.rev, revOf(local), h.total, calc(local).total);
   if (!navigator.onLine) { out.innerHTML = `<div class="notice info">Sin internet. Solo puedo verificar cotizaciones hechas en este teléfono.</div>`; return; }
   try {
     const r = await api(`verificar?folio=${encodeURIComponent(folio)}&sello=${encodeURIComponent(sello)}`);
-    if (r.estado === "autentica") show(true, "✅ Auténtica" + (r.rev > 1 ? ` · R${r.rev}` : "") + (r.odoo ? " · " + esc(r.odoo) : ""), r);
+    if (r.estado === "autentica") {
+      const nv = noVigente(r.estadoOdoo);
+      show(true, (nv ? "✅ Sello auténtico · " + nv : "✅ Auténtica") + (r.rev > 1 ? ` · R${r.rev}` : "") + (r.odoo ? " · " + esc(r.odoo) : ""), r, !!nv);
+    }
     else if (r.estado === "anterior") old(r.rev, r.vigente, r.totalAnterior, r.total);
     else if (r.estado === "invalido") show(false, "❌ El sello no corresponde a este folio. La cotización no es auténtica.");
     else show(false, "⏳ No encuentro ese folio. Puede ser falsa, o aún no se sincroniza desde el teléfono que la hizo.");
@@ -963,6 +1012,21 @@ const ACT = {
     else if (v === APP_VERSION) toast(`Ya tienes la última versión (${APP_VERSION})`);
     else renderSettings();
   }, "Buscando…"),
+  estado: (el) => {
+    if (!navigator.onLine) return toast("Sin internet. Se muestra el último estado conocido.");
+    return withLoading(el, async () => {
+      await checkEstados(true);
+      if (route().startsWith("/cotizacion/")) render();
+      toast("Estado consultado en Odoo");
+    }, "Consultando…");
+  },
+  ocultar: (el) => {
+    const q = quotes.get(el.dataset.uuid); if (!q) return;
+    q.oculta = el.dataset.v === "1"; quotes.put(q);
+    if (q.oculta) { toast("Se ocultó en este teléfono. Puedes verla en «Ver ocultas»."); go("/cotizaciones"); }
+    else { toast("Vuelve a aparecer en la lista"); render(); }
+  },
+  verOcultas: (el) => { S.verOcultas = el.dataset.v === "1"; renderList(); window.scrollTo(0, 0); },
   lf: (el) => { S.listFilter = el.dataset.v; renderList(); },
   reload: (el) => {
     if (!navigator.onLine) return toast("Sin internet");
@@ -1074,6 +1138,37 @@ function updateLine(k) {
   refreshNext();
 }
 function updateMini3() { const m = document.getElementById("mini3"); if (m) m.innerHTML = totalsBlock(S.draft); }
+
+// ---------- Jalar la lista para refrescar ----------
+// Sube lo pendiente y consulta el estado en Odoo sin esperar los 5 min.
+const PTR = { y0: null, dy: 0, activo: false };
+const ptrEl = () => document.getElementById("ptr");
+document.addEventListener("touchstart", (e) => {
+  if (!route().startsWith("/cotizaciones") || window.scrollY > 0 || e.touches.length !== 1 || PTR.activo) return;
+  PTR.y0 = e.touches[0].clientY; PTR.dy = 0;
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  if (PTR.y0 === null) return;
+  PTR.dy = e.touches[0].clientY - PTR.y0;
+  const el = ptrEl(); if (!el) return;
+  el.hidden = PTR.dy < 20;
+  el.textContent = PTR.dy > 70 ? "Suelta para actualizar" : "Jala para actualizar";
+}, { passive: true });
+document.addEventListener("touchend", () => {
+  if (PTR.y0 === null) return;
+  const listo = PTR.dy > 70; PTR.y0 = null;
+  if (listo) pullRefresh(); else { const el = ptrEl(); if (el) el.hidden = true; }
+});
+async function pullRefresh() {
+  if (PTR.activo) return;
+  PTR.activo = true;
+  const el = ptrEl(); if (el) { el.hidden = false; el.innerHTML = `<span class="spinner" aria-hidden="true"></span> Actualizando…`; }
+  try {
+    if (!navigator.onLine) toast("Sin internet. Se muestra el último estado conocido.");
+    else { await runSync(); await checkEstados(true); }
+  } catch (e) { toast(e.message || "No se pudo actualizar", 3500); }
+  finally { PTR.activo = false; if (route().startsWith("/cotizaciones")) renderList(); }
+}
 
 // Delegación de eventos
 document.addEventListener("click", (e) => {

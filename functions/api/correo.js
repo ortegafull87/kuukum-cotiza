@@ -1,5 +1,5 @@
 import { json, fail } from "../../lib/core.js";
-import { odoo, markSent, m2o, createAttachment } from "../../lib/odoo.js";
+import { odoo, markSent, m2o, createAttachment, leerOrden, MSG_ESTADO } from "../../lib/odoo.js";
 import { money } from "../../public/js/calc.js";
 
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -24,11 +24,10 @@ export async function onRequestPost({ request, env, data }) {
 
   const call = odoo(env, data.log);
   try {
-    const [so] = await call("sale.order", "read", {
-      ids: [rec.id], fields: ["name", "partner_id", "amount_total", "validity_date", "client_order_ref", "state"]
-    });
-    if (!so) return fail("La cotización ya no existe en Odoo.", 409);
-    if (so.state === "cancel") return fail("La cotización está cancelada en Odoo.", 409);
+    const so = await leerOrden(call, rec.id, ["name", "partner_id", "amount_total", "validity_date", "client_order_ref", "state"]);
+    // codigo: la app deja de reintentar (a diferencia de "Primero debe subir a Odoo").
+    if (!so) return json({ error: MSG_ESTADO.eliminada, codigo: "eliminada" }, 409);
+    if (so.state === "cancel") return json({ error: MSG_ESTADO.cancel, codigo: "cancel" }, 409);
 
     // Regla de cliente cautivo, revalidada contra Odoo.
     const partnerId = m2o(so.partner_id);

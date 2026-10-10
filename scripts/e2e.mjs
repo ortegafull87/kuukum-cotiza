@@ -202,6 +202,49 @@ ok(r.status === 400, "pantalla inválida -> 400");
   ok(r.status === 200 && !("reportes_email" in cfg), "PUT /api/config ignora reportes_email", cfg.reportes_email);
 }
 
+// 8d. v0.4: estado de Odoo reflejado (cancelada, eliminada, confirmada) y protecciones
+{
+  const unlink = (id) => fetch(ODOO + "/__unlink", { method: "POST", body: JSON.stringify({ model: "sale.order", id }) });
+  const [qc, qe, qs] = [await quote(), await quote(), await quote()];
+  const ids = {};
+  for (const q of [qc, qe, qs]) ids[q.uuid] = (await api("sync", { quote: q })).data.id;
+  let r = await api("estado", { uuids: [qc.uuid, qe.uuid, qs.uuid, "no-existe"] });
+  ok(r.status === 200 && Object.keys(r.data.estados).length === 3 && r.data.estados[qc.uuid].estado === "draft" && r.rid, "POST /api/estado: draft y omite uuids sin registro", r.data);
+  await setOdoo("sale.order", ids[qc.uuid], { state: "cancel" });
+  await unlink(ids[qe.uuid]);
+  await setOdoo("sale.order", ids[qs.uuid], { state: "sale" });
+  const llamadas = (await state()).calls.length;
+  r = await api("estado", { uuids: [qc.uuid, qe.uuid, qs.uuid] });
+  const E = r.data.estados;
+  ok(E[qc.uuid].estado === "cancel" && /^\d{4}-\d\d-\d\dT/.test(E[qc.uuid].fecha) && E[qe.uuid].estado === "eliminada" && E[qs.uuid].estado === "sale" && E[qs.uuid].odooName,
+    "cancelada, eliminada y pedido confirmado (fecha de write_date)", E);
+  ok((await state()).calls.slice(llamadas).filter((c) => c.model === "sale.order").length === 1, "una sola llamada a Odoo por lote");
+  ok((await api("estado", { uuids: Array.from({ length: 201 }, (_, i) => "u" + i) })).status === 400, "más de 200 uuids -> 400");
+  // Protecciones
+  r = await api("sync", { quote: await quote({ uuid: qe.uuid, folio: qe.folio, rev: 2, historial: [{ rev: 1, sello: qe.sello, total: 1800, fecha: qe.fecha }] }) });
+  ok(r.status === 409 && r.data.codigo === "eliminada" && /se eliminó en Odoo\. Duplícala/.test(r.data.error), "revisión sobre orden eliminada -> 409 'se eliminó en Odoo'", r.data);
+  r = await api("sync", { quote: await quote({ uuid: qc.uuid, folio: qc.folio, rev: 2 }) });
+  ok(r.status === 409 && r.data.codigo === "cancel", "revisión sobre orden cancelada -> 409 cancel", r.data);
+  r = await api("sync", { quote: { ...qc, enviada: true } });
+  ok(r.status === 200 && r.data.estadoOdoo === "cancel" && (await order(ids[qc.uuid])).state === "cancel", "marcar enviada no 'des-cancela' la orden en Odoo", r.data);
+  r = await api("correo", { uuid: qc.uuid, rev: 1, force: true, pdfBase64: "JVBERi0xLjQK" });
+  ok(r.status === 409 && r.data.codigo === "cancel", "correo de cotización cancelada -> 409", r.data);
+  r = await api("correo", { uuid: qe.uuid, rev: 1, force: true, pdfBase64: "JVBERi0xLjQK" });
+  ok(r.status === 409 && r.data.codigo === "eliminada", "correo de cotización eliminada -> 409", r.data);
+  r = await api(`verificar?folio=${qc.folio}&sello=${qc.sello}`);
+  ok(r.data.estado === "autentica" && r.data.estadoOdoo === "cancel", "Verificar: sello auténtico + estadoOdoo cancel", r.data);
+  r = await api(`verificar?folio=${qe.folio}&sello=${qe.sello}`);
+  ok(r.data.estado === "autentica" && r.data.estadoOdoo === "eliminada", "Verificar: sello auténtico + estadoOdoo eliminada", r.data);
+  // Regresa a cotización en Odoo -> vuelve a normal
+  await setOdoo("sale.order", ids[qc.uuid], { state: "draft" });
+  r = await api("estado", { uuids: [qc.uuid] });
+  ok(r.data.estados[qc.uuid].estado === "draft", "si en Odoo vuelve a cotización, la app la ve normal");
+  // Duplicar la eliminada: folio nuevo que sube bien
+  const dup = await quote({ items: qe.items });
+  r = await api("sync", { quote: dup });
+  ok(r.status === 200 && r.data.id !== ids[qe.uuid], "duplicar una eliminada crea otra que sube bien", r.data);
+}
+
 // 9. Sesión de un correo sin acceso -> 403 con auth:true
 const intruso = "kk_session=" + await makeSession(env, "intruso@ejemplo.com", "X");
 r = await api("clientes", null, intruso);
