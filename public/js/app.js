@@ -1,4 +1,4 @@
-import { calc, money, r2 } from "./calc.js";
+import { calc, money, r2, parseMoney } from "./calc.js";
 import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js";
 import { enrich, filter, facetValues, FACETAS } from "./catalog.js";
 import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js";
@@ -8,7 +8,7 @@ import { collectDiagnostics, diagText } from "./diagnostics.js";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.3.1";
+const APP_VERSION = "0.3.2";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -77,8 +77,27 @@ async function withLoading(btn, fn, label = "Cargando…") {
 const route = () => (location.hash || "#/").slice(1);
 const go = (h) => { if (location.hash === "#" + h) render(); else location.hash = h; };
 
+// ---------- Barra de estado (iOS, app instalada) ----------
+// Algunas apps instaladas con status-bar-style "default" se dibujan bajo la barra y reportan safe-area-inset-top = 0.
+// Si pasa (instalada, vertical, a pantalla completa, inset 0), se usa la altura de la barra según la pantalla del iPhone.
+const BARRA_IOS = { 568: 20, 667: 20, 736: 20, 812: 47, 844: 47, 852: 59, 874: 62, 896: 48, 926: 47, 932: 59, 956: 62 };
+function fixSafeArea() {
+  const root = document.documentElement;
+  root.style.removeProperty("--safe-top");
+  const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  if (!instalada || !/iPhone|iPod/.test(navigator.userAgent) || innerHeight < innerWidth) return;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;top:0;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none";
+  document.body.appendChild(probe);
+  const inset = probe.offsetHeight; probe.remove();
+  if (inset > 0 || innerHeight < screen.height - 1) return;   // iOS lo reporta bien, o la app empieza debajo de la barra
+  root.style.setProperty("--safe-top", (BARRA_IOS[Math.max(screen.height, screen.width)] || 50) + "px");
+}
+
 // ---------- Arranque ----------
 async function boot() {
+  fixSafeArea();
+  window.addEventListener("resize", fixSafeArea);
   preloadLogo().catch(() => {});
   window.addEventListener("error", (e) => logError({ tipo: "js", mensaje: e.message, origen: `${(e.filename || "").replace(location.origin, "")}:${e.lineno}:${e.colno}` }));
   window.addEventListener("unhandledrejection", (e) => logError({ tipo: "promesa", mensaje: (e.reason && (e.reason.message || String(e.reason))) || "rechazo sin motivo" }));
@@ -236,12 +255,23 @@ function newDraft(base = {}) {
     vigencia: Number(c.vigencia_dias ?? 15), notas: "", estado: "borrador", step: 1, ...base
   };
 }
-function stepValid(n, d = S.draft) {
-  if (n === 1) return !!(d.cliente.nombre || "").trim();
-  if (n === 2) return d.items.length > 0 && d.items.every((i) => i.q > 0 && i.p > 0);
-  if (n === 3) return Number(d.anticipoPct) >= 0 && Number(d.anticipoPct) <= 100;
-  return true;
+// Motivo concreto por el que no se puede avanzar ("" si todo está bien). Se muestra arriba de los botones.
+const corto = (s) => { const t = String(s || "").trim(); return t.length > 28 ? t.slice(0, 27) + "…" : t; };
+function stepIssue(n, d = S.draft) {
+  if (n === 1) return (d.cliente.nombre || "").trim() ? "" : "Elige o crea un cliente";
+  if (n === 2) {
+    if (!d.items.length) return "Agrega al menos un producto";
+    for (const [k, i] of d.items.entries()) {
+      const nom = corto(i.n);
+      if (!nom) return `Escribe la descripción de la partida ${k + 1}`;
+      if (!(Number(i.q) > 0)) return `La cantidad de «${nom}» debe ser mayor a 0`;
+      if (!(Number(i.p) > 0)) return `Falta el precio de «${nom}»`;
+    }
+  }
+  if (n === 3 && !(Number(d.anticipoPct) >= 0 && Number(d.anticipoPct) <= 100)) return "El anticipo debe estar entre 0 y 100%";
+  return "";
 }
+const stepValid = (n, d = S.draft) => !stepIssue(n, d);
 
 function renderWizard() {
   if (!S.draft) { S.draft = newDraft(); saveDraft(); }
@@ -255,7 +285,7 @@ function renderWizard() {
         <div class="step-name">Paso ${n} de 4 · ${STEPS[n - 1]}</div>
       </header>
       <main class="content" id="step">${[0, stepCliente, stepProductos, stepCondiciones, stepVerificar][n]()}</main>
-      <div class="actions" id="wizact">${wizActions(n)}</div>
+      <div class="actions" id="wizact"><div class="why" id="why" role="status" aria-live="polite" ${n < 4 && stepIssue(n) ? "" : "hidden"}>${n < 4 ? esc(stepIssue(n)) : ""}</div>${wizActions(n)}</div>
     </div>`;
   if (n === 4) prepareSeal();
 }
@@ -273,7 +303,11 @@ function wizActions(n) {
 }
 function refreshNext() {
   const b = document.getElementById("nextbtn");
-  if (b) b.disabled = !stepValid(S.draft.step);
+  if (!b) return;
+  const why = stepIssue(S.draft.step);
+  b.disabled = !!why;
+  const w = document.getElementById("why");
+  if (w) { w.textContent = why; w.hidden = !why; }
 }
 
 // Paso 1: cliente
@@ -325,7 +359,7 @@ function stepProductos() {
 }
 function lineCard(it, k) {
   return `
-    <div class="line" data-k="${k}">
+    <div class="line ${Number(it.p) > 0 ? "" : "warn"}" data-k="${k}">
       <input class="name field" data-f="n" value="${esc(it.n)}" aria-label="Descripción" style="border:0;border-bottom:1.5px solid var(--line);background:none;min-height:40px;font-weight:600;font-size:15px;outline:none;width:100%">
       <div class="row">
         <div class="stepper">
@@ -772,8 +806,9 @@ const ACT = {
   addFree: () => {
     S.draft.items.push({ productId: null, n: "Producto personalizado", q: 1, p: 0, c: 0 });
     saveDraft(); renderWizard();
-    const names = document.querySelectorAll(".line .name"); const last = names[names.length - 1];
-    if (last) { last.focus(); last.select(); }
+    // Lo que falta es el precio: enfocarlo (teclado decimal) y seleccionarlo para escribir encima.
+    const prices = document.querySelectorAll('.line [data-f="p"]'); const last = prices[prices.length - 1];
+    if (last) { last.scrollIntoView({ block: "center" }); last.focus(); last.select(); }
   },
   qty: (el) => {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
@@ -1012,6 +1047,7 @@ function updateLine(k) {
   const it = S.draft.items[k];
   const card = document.querySelector(`.line[data-k="${k}"] .lf`);
   if (card) card.innerHTML = `Ganas ${money(it.q * (it.p - it.c))} · <b class="num">${money(it.q * it.p)}</b>`;
+  const line = document.querySelector(`.line[data-k="${k}"]`); if (line) line.classList.toggle("warn", !(Number(it.p) > 0));
   const mini = document.getElementById("mini"); if (mini) mini.innerHTML = miniTotals();
   refreshNext();
 }
@@ -1036,7 +1072,7 @@ document.addEventListener("input", (e) => {
   const line = t.closest(".line");
   if (line && t.dataset.f) {
     const k = Number(line.dataset.k), it = S.draft.items[k];
-    it[t.dataset.f] = t.dataset.f === "n" ? t.value : r2(parseFloat(String(t.value).replace(",", ".")) || 0);
+    it[t.dataset.f] = t.dataset.f === "n" ? t.value : parseMoney(t.value);
     saveDraft(); updateLine(k); return;
   }
   if (["anticipoPct", "vigencia", "entrega", "notas"].includes(t.id)) {
@@ -1045,6 +1081,12 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  // Al salir de un precio/costo/cantidad, mostrar el valor ya interpretado (p. ej. "1,500" -> 1500).
+  const f = e.target.dataset && e.target.dataset.f;
+  if (S.draft && ["p", "c", "q"].includes(f) && e.target.closest(".line")) {
+    const it = S.draft.items[Number(e.target.closest(".line").dataset.k)];
+    if (it) e.target.value = String(it[f]);
+  }
   if (e.target.id === "iva" && S.draft) { S.draft.iva = e.target.checked; saveDraft(); updateMini3(); }
   if (e.target.id === "porCorreo" && S.draft) { S.draft.porCorreo = e.target.checked; saveDraft(); }
   if (e.target.id === "rp-pantalla") RP.pantalla = e.target.value;

@@ -111,7 +111,7 @@ ok(msgs.length === 1 && msgs[0].partner_ids[0] === 1 && msgs[0].attachment_ids.l
 ok(msgs[0] && msgs[0].subject === `Cotización ${r1.folio}-R2 · Kuu Kum Personalizados` && /Grupo Scouts 12/.test(msgs[0].body), "asunto y plantilla con placeholders", msgs[0]);
 ok(so.state === "sent", "correo marca la cotización como enviada");
 const att = (await state())["ir.attachment"].at(-1);
-ok(att.res_model === "sale.order" && att.res_id === soId && att.name === `Cotizacion_${r1.folio}-R2.pdf`, "PDF adjunto a la sale.order", att);
+ok(att.res_model === "sale.order" && att.res_id === soId && att.name === `Cotizacion_${r1.folio}-R2.pdf` && att.file_size === 9, "PDF adjunto a la sale.order con file_size correcto", att);
 c = await api("correo", { uuid: r1.uuid, rev: 2, pdfBase64: "JVBERi0xLjQK" });
 ok(c.data.yaEnviado === true && (await state())["mail.message"].filter((m) => m.subtype_xmlid === "mail.mt_comment" && m.res_id === soId).length === 1, "no reenvía dos veces el mismo rev");
 c = await api("correo", { uuid: r1.uuid, rev: 2, force: true, pdfBase64: "JVBERi0xLjQK" });
@@ -146,7 +146,8 @@ ok(mail && mail.email_to === "hola@kuukum.com" && mail.reply_to === EMAIL && mai
 const atts = (await state())["ir.attachment"].filter((a) => mail.attachment_ids[0][2].includes(a.id));
 ok(atts.length === 4 && atts.filter((a) => a.mimetype === "image/jpeg").length === 3, "3 fotos adjuntas + JSON", atts.map((a) => a.name));
 const dj = atts.find((a) => a.name === `diagnostico-${r.data.id}.json`);
-const djson = dj && JSON.parse(Buffer.from(dj.datas, "base64").toString("utf8"));
+const djson = dj && JSON.parse(Buffer.from(dj.raw, "base64").toString("utf8"));
+ok(atts.every((a) => a.file_size > 0 && a.file_size === Buffer.from(a.raw, "base64").length && !("datas" in a)), "adjuntos con raw y file_size > 0 (correcto)", atts.map((a) => [a.name, a.file_size]));
 ok(djson && djson.diag.dispositivo.os === "iOS 26.0.1" && djson.servidor.commit && !("ip" in djson.servidor), "diagnostico-CT-000N.json completo, sin IP", djson && djson.servidor);
 const bloque = mail && (mail.body_html.match(/---ticket---[\s\S]*?---fin---/) || [""])[0];
 ok(new RegExp(`^---ticket---\nid: ${r.data.id}\npantalla: Paso 2 Productos\nusuario: ${EMAIL}\nversion: 0\\.3\\.0\ncommit: \\S+\nos: iOS 26\\.0\\.1\nnavegador: Safari 26\\.0\ninstalada: true\nestado: nuevo\n---fin---$`).test(bloque),
@@ -157,6 +158,20 @@ const again = await api("reportes", rep);
 ok(again.data.id === r.data.id && (await state())["mail.mail"].length === n, "reintento con el mismo clientId no duplica");
 r = await api("reportes", { ...rep, clientId: "x" + run, pantalla: "Inventada" });
 ok(r.status === 400, "pantalla inválida -> 400");
+
+// 8b. Adjunto que Odoo guarda vacío: error con requestId y NO se manda el correo
+{
+  await fetch(ODOO + "/__attach", { method: "POST", body: JSON.stringify({ mode: "empty" }) });
+  const antes = (await state())["mail.mail"].length;
+  const r0 = await api("reportes", { ...rep, clientId: "vacio-" + run, fotos: [{ ...foto, data: "data:image/jpeg;base64," + foto.data }] });
+  const st0 = await state();
+  ok(r0.status === 502 && r0.data.requestId && /0 bytes/.test(r0.data.error), "adjunto en 0 bytes -> 502 con requestId", r0.data);
+  ok(st0["mail.mail"].length === antes, "no se manda el correo incompleto");
+  ok(!st0["ir.attachment"].some((a) => a.file_size === 0), "el adjunto vacío se borra");
+  const r1 = await api("reportes", { ...rep, clientId: "vacio-" + run, fotos: [{ ...foto, data: "data:image/jpeg;base64," + foto.data }] });
+  const m1 = (await state())["mail.mail"].at(-1);
+  ok(r1.status === 200 && r1.data.id === r0.data.error.match(/CT-\d{4}/)[0] && m1.attachment_ids[0][2].length === 2, "al reintentar se manda el mismo ticket (prefijo data: aceptado)", r1);
+}
 
 // 9. Sesión de un correo sin acceso -> 403 con auth:true
 const intruso = "kk_session=" + await makeSession(env, "intruso@ejemplo.com", "X");

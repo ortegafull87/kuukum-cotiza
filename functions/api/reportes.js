@@ -1,5 +1,5 @@
 import { json, fail } from "../../lib/core.js";
-import { odoo } from "../../lib/odoo.js";
+import { odoo, createAttachment } from "../../lib/odoo.js";
 
 const PANTALLAS = ["Inicio de sesión", "Paso 1 Cliente", "Paso 2 Productos", "Paso 3 Condiciones", "Paso 4 Verificar",
   "Lista de cotizaciones", "Detalle de cotización", "PDF", "Envío por WhatsApp", "Sincronización con Odoo", "Ajustes", "Otro"];
@@ -54,17 +54,11 @@ export async function onRequestPost({ request, env, data }) {
     const attIds = [];
     for (const [i, f] of fotos.entries()) {
       const ext = f.mimetype === "image/png" ? "png" : "jpg";
-      const [aid] = await call("ir.attachment", "create", {
-        vals_list: [{ name: String(f.name || `${id}_foto${i + 1}.${ext}`).slice(0, 120), datas: f.data, mimetype: f.mimetype }]
-      });
-      attIds.push(aid);
+      attIds.push(await createAttachment(call, { name: String(f.name || `${id}_foto${i + 1}.${ext}`).slice(0, 120), mimetype: f.mimetype }, f.data));
     }
     // Todo el diagnóstico en JSON, para el futuro sistema de tickets.
     const full = JSON.stringify({ ticket: { ...t, diag: undefined }, diag: t.diag, servidor: t.servidor }, null, 2);
-    const [jsonId] = await call("ir.attachment", "create", {
-      vals_list: [{ name: `diagnostico-${id}.json`, datas: b64utf8(full), mimetype: "application/json" }]
-    });
-    attIds.push(jsonId);
+    attIds.push(await createAttachment(call, { name: `diagnostico-${id}.json`, mimetype: "application/json" }, b64utf8(full)));
     const to = String(data.config.reportes_email || "hola@kuukum.com").trim();
     const [mailId] = await call("mail.mail", "create", {
       vals_list: [{

@@ -1,5 +1,5 @@
 import { json, fail } from "../../lib/core.js";
-import { odoo, markSent, m2o } from "../../lib/odoo.js";
+import { odoo, markSent, m2o, createAttachment } from "../../lib/odoo.js";
 import { money } from "../../public/js/calc.js";
 
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -42,12 +42,8 @@ export async function onRequestPost({ request, env, data }) {
 
     const folio = so.client_order_ref || so.name;
     data.log.folio = folio; data.log.cliente = partnerId;
-    const [attId] = await call("ir.attachment", "create", {
-      vals_list: [{
-        name: `Cotizacion_${folio}.pdf`, datas: pdfBase64, mimetype: "application/pdf",
-        res_model: "sale.order", res_id: rec.id
-      }]
-    });
+    const attId = await createAttachment(call,
+      { name: `Cotizacion_${folio}.pdf`, mimetype: "application/pdf", res_model: "sale.order", res_id: rec.id }, pdfBase64);
 
     const vars = {
       cliente: p.name, folio, total: money(so.amount_total),

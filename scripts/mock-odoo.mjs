@@ -1,7 +1,9 @@
 // Odoo simulado para pruebas locales: responde POST /json/2/<modelo>/<método> con los métodos que usa la app.
 // Uso: node scripts/mock-odoo.mjs [puerto]   (por defecto 8069)
 // Ayudas de prueba: GET /__state (todo el estado), POST /__set {model, id, vals} (p. ej. confirmar una cotización),
-// POST /__fail {model, method, message} (la siguiente llamada a ese método falla con 500).
+// POST /__fail {model, method, message} (la siguiente llamada a ese método falla con 500),
+// POST /__attach {mode: "empty"} (el siguiente ir.attachment queda en 0 bytes, como pasaba con `datas`).
+// ir.attachment se comporta como Odoo 19.3: `datas` no existe (se ignora) y `raw` llega en base64 y se decodifica.
 import http from "node:http";
 
 const PORT = Number(process.argv[2]) || 8069;
@@ -26,6 +28,7 @@ const db = {
 const seq = { n: 1000 };
 const calls = [];
 const fails = [];
+let attachMode = null;
 const rec = (model, id) => db[model].find((r) => r.id === id);
 const commercial = (id) => { let p = rec("res.partner", id); while (p && p.parent_id) p = rec("res.partner", p.parent_id); return p ? p.id : id; };
 const m2o = (model, id) => (id ? [id, (rec(model, id) || {}).name || (rec(model, id) || {}).display_name || ""] : false);
@@ -82,6 +85,12 @@ const METHODS = {
     if (m === "sale.order") { r.name = "S" + String(r.id).padStart(5, "0"); r.state = "draft"; delete r.order_line; db[m].push(r); applyLines(r, v.order_line); return r.id; }
     if (m === "res.partner") r.parent_id = false;
     if (m === "mail.mail") r.state = "outgoing";
+    if (m === "ir.attachment") {
+      delete r.datas;                                   // Odoo 19.3 ignora campos desconocidos
+      if (r.raw && !/^[A-Za-z0-9+/]*={0,2}$/.test(r.raw)) err(422, "Attachment is not encoded in base64.");
+      r.file_size = r.raw ? Buffer.from(r.raw, "base64").length : 0;
+      if (attachMode === "empty") { r.file_size = 0; delete r.raw; attachMode = null; }
+    }
     db[m].push(r); return r.id;
   }),
   write: (m, b) => {
@@ -101,6 +110,7 @@ const METHODS = {
       partner_ids: b.partner_ids || [], attachment_ids: b.attachment_ids || [], message_type: b.message_type, subtype_xmlid: b.subtype_xmlid };
     db["mail.message"].push(msg); return msg.id;
   })[0],
+  unlink: (m, b) => { db[m] = db[m].filter((r) => !b.ids.includes(r.id)); return true; },
   send: (m, b) => { for (const id of b.ids) rec(m, id).state = "sent"; return null; }
 };
 
@@ -108,6 +118,7 @@ http.createServer(async (req, res) => {
   const send = (status, data) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(data)); };
   let raw = ""; for await (const ch of req) raw += ch;
   if (req.url === "/__state") return send(200, { ...db, calls });
+  if (req.url === "/__attach") { attachMode = JSON.parse(raw).mode || null; return send(200, true); }
   if (req.url === "/__fail") { fails.push(JSON.parse(raw)); return send(200, true); }
   if (req.url === "/__set") { const { model, id, vals } = JSON.parse(raw); Object.assign(rec(model, id), vals); return send(200, true); }
   const m = req.url.match(/^\/json\/2\/([\w.]+)\/(\w+)$/);

@@ -7,7 +7,9 @@
 <meta name="theme-color" content="#002C37">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<!-- black-translucent: iOS reporta safe-area-inset-top y el CSS deja el espacio (con "default" algunos iPhone dibujan
+     la app instalada bajo la barra reportando 0). iOS lee este valor al instalar: las apps ya instaladas usan el respaldo de app.js. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Cotiza">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">

@@ -16,5 +16,17 @@ export function calc(q) {
   return { sub, costo, desc, base, iva, total, ganancia, margen, anticipo, saldo };
 }
 
+// Precio capturado a mano (es-MX): "1,500" -> 1500 · "1500.50" -> 1500.5 · "150,50" -> 150.5 · "$1,500.50" -> 1500.5.
+// Una sola coma seguida de 1–2 dígitos al final es decimal; si no, la coma separa miles.
+export function parseMoney(v) {
+  let s = String(v ?? "").replace(/[\s$]/g, "");
+  if (!s) return 0;
+  if (s.includes(",") && s.includes(".")) s = s.replace(/,/g, "");
+  else if (/^-?\d+,\d{1,2}$/.test(s)) s = s.replace(",", ".");
+  else s = s.replace(/,/g, "");
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? r2(n) : 0;
+}
+
 export const money = (v) =>
   "$" + r2(v).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
