@@ -1,14 +1,18 @@
 import { calc, money, r2 } from "./calc.js";
-import { formatSeal, cleanSeal } from "./canonical.js";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js";
 import { enrich, filter, facetValues, FACETAS } from "./catalog.js";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, syncAll, saveSealKey, sign, clearKeys } from "./store.js";
-import { preloadLogo, sharePdf } from "./pdf.js";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox } from "./store.js";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
-const VERSION = "MVP0 · 2026-10-09";
+const APP_VERSION = "v0.2";
+const VERSION = APP_VERSION + " · 2026-10-09";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
+const PANTALLAS = ["Inicio de sesión", "Paso 1 Cliente", "Paso 2 Productos", "Paso 3 Condiciones", "Paso 4 Verificar",
+  "Lista de cotizaciones", "Detalle de cotización", "PDF", "Envío por WhatsApp", "Sincronización con Odoo", "Ajustes", "Otro"];
+const folioDe = (q) => folioVisible(q.folio, q.rev);
 
 const I = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -37,7 +41,7 @@ const S = {
   clientes: (ls.get("clientes", null) || { clientes: [] }).clientes,
   draft: ls.get("draft", null),
   authExpired: false,
-  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false
+  listFilter: "todas", listQuery: "", clientQuery: "", newClient: false, prevRoute: ""
 };
 const $app = document.getElementById("app");
 const $sheet = document.getElementById("sheet-root");
@@ -87,8 +91,13 @@ async function refresh() {
   }
 }
 async function runSync() {
-  const r = await syncAll(() => { renderPill(); if (route().startsWith("/cotizaciones") || route().startsWith("/cotizacion/")) render(); });
+  const r = await syncAll(() => { renderPill(); if (route().startsWith("/cotizaciones") || route().startsWith("/cotizacion/")) render(); },
+    { pdfBase64: (q) => pdfBase64(q, S.cfg || {}) });
   if (r && r.auth) { S.authExpired = true; render(); }
+  if (r && !r.skipped && !r.auth) {
+    const ids = await flushOutbox();
+    if (ids.length) toast(ids.length === 1 ? `Reporte ${ids[0]} enviado. Gracias.` : `Reportes ${ids.join(", ")} enviados. Gracias.`, 3500);
+  }
   renderPill();
   return r;
 }
@@ -99,6 +108,8 @@ function render() {
   closeSheet();
   if (r.startsWith("/login") || (!S.user && !r.startsWith("/verificar"))) return renderLogin();
   if (!S.cfg) S.cfg = {};
+  if (r.startsWith("/reportar")) return renderReport();
+  S.prevRoute = r;
   if (r.startsWith("/nueva")) return renderWizard();
   if (r.startsWith("/cotizacion/")) return renderDetail(decodeURIComponent(r.split("/")[2]));
   if (r.startsWith("/ajustes")) return renderSettings();
@@ -175,7 +186,7 @@ function renderWizard() {
   $app.innerHTML = `
     <div class="screen">
       <header class="wiz-head">
-        <div class="row"><h1>Nueva cotización</h1>${d.folio ? `<span class="num muted small">${esc(d.folio)}</span>` : ""}
+        <div class="row"><h1>${d.editOf ? "Editar cotización" : "Nueva cotización"}</h1>${d.folio ? `<span class="num muted small">${esc(folioDe(d))}</span>` : ""}
           <button class="icon-btn lock" data-act="logout" aria-label="Cerrar sesión">${I.lock}</button></div>
         <div class="progress">${STEPS.map((_, i) => `<span class="${i < n ? "on" : ""}"></span>`).join("")}</div>
         <div class="step-name">Paso ${n} de 4 · ${STEPS[n - 1]}</div>
@@ -321,8 +332,22 @@ function stepVerificar() {
       <div class="kv"><span>Vigencia</span><span>${esc(d.vigencia)} días</span></div>
       ${d.notas ? `<div class="muted small">${esc(d.notas)}</div>` : ""}
     </div>
+    ${correoPaso4(d)}
     <div class="profit"><div><small>Tu ganancia (no sale en el PDF)</small><b>${money(t.ganancia)}</b><small>Costo ${money(t.costo)}</small></div>${marginBadge(t.margen)}</div>
     <div class="muted small num" id="sealline">Generando sello…</div>`;
+}
+// Correo solo para clientes cautivos (≥1 pedido confirmado y con correo). El servidor lo vuelve a validar.
+function clienteOdoo(c) { return c && c.odooId ? S.clientes.find((x) => x.id === c.odooId) : null; }
+function correoCliente(c) { const o = clienteOdoo(c); return (o && o.email) || (c && c.email) || ""; }
+function esCautivo(c) {
+  const o = clienteOdoo(c);
+  return !!(o ? o.cautivo : c && c.odooId && c.cautivo && c.email);
+}
+const SIN_CORREO = `<div class="muted small">Correo disponible para clientes con al menos una compra.</div>`;
+function correoPaso4(d) {
+  if (!esCautivo(d.cliente)) return SIN_CORREO;
+  return `<div class="card"><label class="toggle"><span>Enviar también por correo a <b>${esc(correoCliente(d.cliente))}</b></span>
+    <input type="checkbox" id="porCorreo" ${d.porCorreo ? "checked" : ""}></label></div>`;
 }
 async function prepareSeal() {
   const d = S.draft;
@@ -333,7 +358,7 @@ async function prepareSeal() {
     d.sello = await sign(d);
     saveDraft();
     const el = document.getElementById("sealline");
-    if (el) el.innerHTML = `${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(d.folio)} · ${formatSeal(d.sello)}`;
+    if (el) el.innerHTML = `${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(folioDe(d))} · ${formatSeal(d.sello)}`;
     ["savebtn", "sendbtn"].forEach((id) => { const b = document.getElementById(id); if (b) b.disabled = false; });
   } catch (e) {
     const el = document.getElementById("sealline");
@@ -389,8 +414,10 @@ function drawSheet(keepFocus) {
 
 // ---------- Lista ----------
 function statusChip(q) {
+  if (q.sync === "conflicto") return `<span class="st err">Ya es pedido</span>`;
   if (q.sync === "error") return `<span class="st err">Error al subir</span>`;
   if (!q.odoo) return `<span class="st pend">Por subir</span>`;
+  if (revOf(q) > (q.odoo.rev || 1)) return `<span class="st pend">${esc(q.odoo.name)} · R${revOf(q)} por subir</span>`;
   if (q.enviada && !q.odoo.enviada) return `<span class="st pend">${esc(q.odoo.name)} · por marcar</span>`;
   return `<span class="st ok">${esc(q.odoo.name)} ✓</span>`;
 }
@@ -402,7 +429,7 @@ function renderList() {
     if (S.listFilter === "pend" && !needsSync(q)) return false;
     if (S.listFilter === "env" && !q.enviada) return false;
     if (S.listFilter === "err" && q.sync !== "error") return false;
-    return !qq || N(q.cliente.nombre + " " + q.folio + " " + (q.odoo ? q.odoo.name : "")).includes(qq);
+    return !qq || N(q.cliente.nombre + " " + folioDe(q) + " " + (q.odoo ? q.odoo.name : "")).includes(qq);
   });
   const d = S.draft;
   $app.innerHTML = `
@@ -412,7 +439,7 @@ function renderList() {
       <main class="content">
         ${authBanner()}
         ${d && (d.cliente.nombre || d.items.length) ? `<button class="qcard" data-act="nav" data-to="/nueva" style="background:var(--accent-soft);border-radius:var(--r);padding:14px">
-          <div class="r1"><span class="folio">Borrador en curso</span><span class="st draft">Paso ${d.step} de 4</span></div>
+          <div class="r1"><span class="folio">${d.editOf ? "Editando " + esc(folioDe(d)) : "Borrador en curso"}</span><span class="st draft">Paso ${d.step} de 4</span></div>
           <div class="muted">${esc(d.cliente.nombre || "Sin cliente")} · ${d.items.length} producto(s)</div></button>` : ""}
         <label class="search">${I.search}<input id="lq" placeholder="Buscar cliente o folio" value="${esc(S.listQuery)}" autocomplete="off"></label>
         <div class="chips">${[["todas", "Todas"], ["pend", "Por subir"], ["env", "Enviadas"], ["err", "Con error"]].map(([k, v]) =>
@@ -420,7 +447,7 @@ function renderList() {
         <div id="qlist">${list.length ? list.map((q) => {
           const t = calc(q), pzs = q.items.reduce((a, i) => a + Number(i.q), 0);
           return `<button class="qcard" data-act="nav" data-to="/cotizacion/${q.uuid}">
-            <div class="r1"><span class="folio">${esc(q.folio)}</span>${statusChip(q)}</div>
+            <div class="r1"><span class="folio">${esc(q.folio)}${revOf(q) > 1 ? ` · R${revOf(q)}` : ""}</span>${statusChip(q)}</div>
             <div class="muted">${esc(q.cliente.nombre)} · ${canalName(q.canal)}</div>
             <div class="r3"><span class="muted small">${pzs} pza${pzs === 1 ? "" : "s"} · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total">${money(t.total)}</span></div>
           </button>`;
@@ -439,12 +466,16 @@ function renderDetail(uuid) {
   $app.innerHTML = `
     <div class="screen">
       <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver">${I.back}</button>
-        <h1 class="num">${esc(q.folio)}</h1><span id="pill">${pillHtml()}</span></header>
+        <h1 class="num">${esc(folioDe(q))}</h1><span id="pill">${pillHtml()}</span></header>
       <main class="content">
         <div class="card">
           <div class="kv"><b style="font-size:18px">${esc(q.cliente.nombre)}</b>${statusChip(q)}</div>
           <div class="muted small">${canalName(q.canal)} · ${new Date(q.fecha).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}${q.enviada ? " · Enviada" : " · Guardada"}</div>
+          ${revOf(q) > 1 ? `<div class="muted small">Revisión ${revOf(q)}${(q.historial || []).map((h) => ` · R${h.rev} ${money(h.total)}`).join("")}</div>` : ""}
           ${q.sync === "error" ? `<div class="notice">No subió a Odoo: ${esc(q.syncError)}</div>` : ""}
+          ${q.sync === "conflicto" ? `<div class="notice">${esc(q.syncError)}</div>
+            <div class="grid2"><button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar como nueva</button>
+              ${q.revPrev ? `<button class="pill ghost" data-act="undoRev" data-uuid="${q.uuid}">Descartar R${revOf(q)}</button>` : ""}</div>` : ""}
         </div>
         <div class="card"><h3>Productos</h3>
           ${q.items.map((i) => `<div class="kv"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
@@ -455,16 +486,29 @@ function renderDetail(uuid) {
           <div class="kv"><span>Saldo</span><span class="num">${money(t.saldo)}</span></div>
         </div>
         <div class="profit"><div><small>Tu ganancia</small><b>${money(t.ganancia)}</b></div>${marginBadge(t.margen)}</div>
-        <div class="muted small num">${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(q.folio)} · ${formatSeal(q.sello)}</div>
+        <div class="muted small num">${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(folioDe(q))} · ${formatSeal(q.sello)}</div>
         <button class="pill block" data-act="resend" data-uuid="${q.uuid}">${q.enviada ? "Reenviar PDF" : "Enviar PDF"}</button>
+        ${correoDetalle(q)}
         <div class="grid2">
-          <button class="pill soft" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
+          ${q.sync === "conflicto" ? "" : `<button class="pill soft" data-act="edit" data-uuid="${q.uuid}">Editar</button>`}
           <button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar</button>
         </div>
+        <button class="pill soft block" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
         ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync">Reintentar subida</button>` : ""}
         ${odooLink ? `<a class="pill ghost block" style="display:grid;place-items:center;text-decoration:none" href="${odooLink}" target="_blank" rel="noopener">Abrir ${esc(q.odoo.name)} en Odoo</a>` : ""}
       </main>
     </div>`;
+}
+
+function correoDetalle(q) {
+  if (!esCautivo(q.cliente)) return SIN_CORREO;
+  const cuando = (f) => new Date(f).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+  const ya = q.correo && q.correo.rev === revOf(q);
+  return `
+    ${q.correoPend ? `<div class="notice info">Correo en cola para ${esc(correoCliente(q.cliente))}. Se manda en cuanto la cotización esté en Odoo.</div>` : ""}
+    ${q.correoError ? `<div class="notice">Correo: ${esc(q.correoError)}</div>` : ""}
+    ${q.correo ? `<div class="muted small">Enviado por correo el ${cuando(q.correo.fecha)} a ${esc(q.correo.email)}${q.correo.rev !== revOf(q) ? ` (R${q.correo.rev})` : ""}</div>` : ""}
+    <button class="pill soft block" data-act="mail" data-uuid="${q.uuid}" ${q.correoPend ? "disabled" : ""}>${ya ? "Reenviar por correo" : "Enviar por correo"}</button>`;
 }
 
 // ---------- Ajustes ----------
@@ -474,6 +518,8 @@ const CFG_FIELDS = [
     ["instagram", "Instagram (usuario)"], ["facebook", "Facebook (usuario)"], ["tiktok", "TikTok (usuario)"], ["direccion", "Dirección"]]],
   ["Pago", [["banco", "Banco"], ["clabe", "CLABE"], ["beneficiario", "Beneficiario"], ["anticipo_pct", "Anticipo por defecto %", "numeric"]]],
   ["Condiciones por defecto", [["entrega_texto", "Tiempo de entrega"], ["vigencia_dias", "Vigencia (días)", "numeric"], ["terminos", "Términos y condiciones", "area"]]],
+  ["Correo", [["correo_cotizacion", "Mensaje del correo de cotización", "area", "Puedes usar {cliente}, {folio}, {total}, {vigencia} y {whatsapp}. Solo se manda a clientes con al menos una compra."],
+    ["reportes_email", "Correo que recibe los reportes de problemas", "email"]]],
   ["Acceso", [["usuarios_permitidos", "Correos con acceso (uno por línea)", "area"]]]
 ];
 function renderSettings() {
@@ -485,11 +531,12 @@ function renderSettings() {
       <main class="content">
         ${!navigator.onLine ? `<div class="notice info">Sin internet: puedes ver los ajustes, pero los cambios se guardan cuando haya conexión.</div>` : ""}
         <form id="cfgform" class="content" style="padding:0;gap:14px">
-          ${CFG_FIELDS.map(([title, fields]) => `<div class="card"><h3>${title}</h3>${fields.map(([k, label, type]) => {
+          ${CFG_FIELDS.map(([title, fields]) => `<div class="card"><h3>${title}</h3>${fields.map(([k, label, type, hint]) => {
             const v = k === "usuarios_permitidos" ? users : c[k] ?? "";
-            return type === "area"
+            return (type === "area"
               ? `<label class="field">${label}<textarea name="${k}" id="cfg-${k}" rows="4">${esc(v)}</textarea></label>`
-              : `<label class="field">${label}<input name="${k}" id="cfg-${k}" value="${esc(v)}" ${type ? `inputmode="${type}"` : ""} autocomplete="off"></label>`;
+              : `<label class="field">${label}<input name="${k}" id="cfg-${k}" value="${esc(v)}" ${type ? `inputmode="${type}"` : ""} autocomplete="off"></label>`) +
+              (hint ? `<div class="muted small">${hint}</div>` : "");
           }).join("")}</div>`).join("")}
           <button class="pill block" type="submit">Guardar ajustes</button>
         </form>
@@ -498,6 +545,11 @@ function renderSettings() {
           <button class="pill soft block" data-act="reload">Actualizar catálogo y clientes</button>
           ${S.revisar.length ? `<details><summary class="small" style="min-height:40px;display:flex;align-items:center">${S.revisar.length} productos de Odoo ocultos por precio a revisar</summary>
             <div class="small muted" style="display:grid;gap:6px;padding-top:6px">${S.revisar.map((p) => `<div>${esc(p.n)} — <span class="num">${money(p.p)}</span></div>`).join("")}</div></details>` : ""}
+          <div class="muted small">Los cambios hechos directamente en Odoo no regresan a la app: si alguien edita allá, Odoo manda. Para cambiar una cotización desde aquí usa <b>Editar</b>, que crea una revisión (R2, R3…).</div>
+        </div>
+        <div class="card"><h3>Ayuda</h3>
+          <div class="muted small">¿Algo no funcionó como esperabas? Cuéntanos y lo revisamos.</div>
+          <button class="pill soft block" data-act="nav" data-to="/reportar">Reportar un problema</button>
         </div>
         <div class="card"><h3>Seguridad</h3>
           <button class="pill soft block" data-act="nav" data-to="/verificar">Verificar el sello de una cotización</button>
@@ -532,10 +584,16 @@ function renderVerify([folio = "", sello = ""] = []) {
   else if (folio && sello) document.getElementById("vres").innerHTML = `<div class="notice info">Entra con una cuenta autorizada para ver el resultado.</div>`;
 }
 async function doVerify() {
-  const folio = document.getElementById("vf").value.trim().toUpperCase();
+  const { folio } = splitFolio(document.getElementById("vf").value);
   const sello = cleanSeal(document.getElementById("vs").value);
   const out = document.getElementById("vres");
   if (!folio || !sello) { out.innerHTML = `<div class="notice">Escribe el folio y el sello.</div>`; return; }
+  const old = (rev, vigente, totalAnt, total) => {
+    out.innerHTML = `<div class="verify warn"><b style="font-size:18px">⚠️ Revisión anterior (R${rev}). La vigente es R${vigente}</b>
+      <div class="kv"><span>Total R${rev}</span><span class="num">${money(totalAnt)}</span></div>
+      <div class="kv big"><span>Total vigente R${vigente}</span><span class="num">${money(total)}</span></div>
+      <div class="small">El sello es auténtico, pero la cotización se actualizó después. Vale la revisión vigente.</div></div>`;
+  };
   const show = (ok, title, snap) => {
     out.innerHTML = `<div class="verify ${ok ? "ok" : "bad"}"><b style="font-size:18px">${title}</b>${snap ? `
       <div>${esc(snap.cliente)} · ${new Date(snap.fecha).toLocaleDateString("es-MX")}</div>
@@ -546,12 +604,15 @@ async function doVerify() {
   const local = quotes.all().find((q) => q.folio === folio);
   if (local && local.sello === sello) {
     const t = calc(local);
-    return show(true, "✅ Auténtica", { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total });
+    return show(true, "✅ Auténtica" + (revOf(local) > 1 ? ` · R${revOf(local)}` : ""), { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total });
   }
+  const h = local && (local.historial || []).find((x) => x.sello === sello);
+  if (h) return old(h.rev, revOf(local), h.total, calc(local).total);
   if (!navigator.onLine) { out.innerHTML = `<div class="notice info">Sin internet. Solo puedo verificar cotizaciones hechas en este teléfono.</div>`; return; }
   try {
     const r = await api(`verificar?folio=${encodeURIComponent(folio)}&sello=${encodeURIComponent(sello)}`);
-    if (r.estado === "autentica") show(true, "✅ Auténtica" + (r.odoo ? " · " + esc(r.odoo) : ""), r);
+    if (r.estado === "autentica") show(true, "✅ Auténtica" + (r.rev > 1 ? ` · R${r.rev}` : "") + (r.odoo ? " · " + esc(r.odoo) : ""), r);
+    else if (r.estado === "anterior") old(r.rev, r.vigente, r.totalAnterior, r.total);
     else if (r.estado === "invalido") show(false, "❌ El sello no corresponde a este folio. La cotización no es auténtica.");
     else show(false, "⏳ No encuentro ese folio. Puede ser falsa, o aún no se sincroniza desde el teléfono que la hizo.");
   } catch (e) { out.innerHTML = `<div class="notice">${esc(e.message)}</div>`; }
@@ -560,7 +621,7 @@ async function doVerify() {
 // ---------- Texto para WhatsApp ----------
 function quoteText(q) {
   const t = calc(q);
-  return `*Cotización Kuukum ${q.folio}*\nPara: ${q.cliente.nombre}\n\n` +
+  return `*Cotización Kuukum ${folioDe(q)}*\nPara: ${q.cliente.nombre}\n\n` +
     q.items.map((i) => `• ${i.q} × ${i.n} — ${money(i.p)} c/u = ${money(i.q * i.p)}`).join("\n") + "\n\n" +
     (Number(q.desc) ? `Descuento ${q.desc}%: −${money(t.desc)}\n` : "") + (q.iva ? `IVA 16%: ${money(t.iva)}\n` : "") +
     `*Total: ${money(t.total)}*${q.iva ? "" : " (sin IVA)"}\nAnticipo ${q.anticipoPct}%: ${money(t.anticipo)}\n` +
@@ -591,7 +652,8 @@ const ACT = {
   canal: (el) => { S.draft.canal = el.dataset.v; saveDraft(); document.querySelectorAll('[data-act="canal"]').forEach((b) => b.classList.toggle("on", b.dataset.v === S.draft.canal)); },
   pickClient: (el) => {
     const c = clientPool()[Number(el.dataset.i)];
-    S.draft.cliente = { odooId: c.id || null, nombre: c.nombre, tel: c.tel || "", email: c.email || "" };
+    S.draft.cliente = { odooId: c.id || null, nombre: c.nombre, tel: c.tel || "", email: c.email || "", cautivo: !!c.cautivo };
+    S.draft.porCorreo = false;
     saveDraft(); S.clientQuery = ""; renderWizard();
   },
   clearClient: () => { S.draft.cliente = { odooId: null, nombre: "", tel: "", email: "" }; saveDraft(); renderWizard(); },
@@ -631,15 +693,25 @@ const ACT = {
   desc: (el) => { S.draft.desc = Number(el.dataset.v); saveDraft(); document.querySelectorAll('[data-act="desc"]').forEach((b) => b.classList.toggle("on", Number(b.dataset.v) === S.draft.desc)); updateMini3(); },
   finish: async (el) => {
     const d = S.draft;
+    if (!d) return;                                     // doble toque: ya se guardó
     if (!d.sello) return toast("Espera a que se genere el sello");
     const send = el.dataset.send === "1";
-    const q = { ...d, estado: "guardada", enviada: false, sync: "pendiente", step: undefined };
+    const q = { ...d, estado: "guardada", enviada: false, sync: "pendiente", syncError: "", step: undefined, editOf: undefined, porCorreo: undefined };
+    const orig = d.editOf && quotes.get(d.editOf);
+    if (orig) {
+      // Revisión N+1: mismo uuid y folio; se guarda el historial y la versión previa (para deshacer si Odoo la rechaza).
+      q.historial = [...(orig.historial || []), { rev: revOf(orig), sello: orig.sello, total: calc(orig).total, fecha: orig.fecha }];
+      q.odoo = orig.odoo ? { ...orig.odoo, enviada: false } : null;
+      q.correo = orig.correo || null;
+      q.revPrev = { ...orig, revPrev: undefined };
+    }
+    if (d.porCorreo && esCautivo(d.cliente)) q.correoPend = { force: false };
     quotes.put(q); S.draft = null; ls.del("draft"); S.clientQuery = "";
     if (send) {
       const res = await sharePdf(q, S.cfg);            // se llama dentro del toque: requisito de iOS
       if (res !== "cancelled") { q.enviada = true; q.estado = "enviada"; quotes.put(q); }
       else toast("Guardada sin enviar. Puedes enviarla desde la lista.");
-    } else toast("Cotización guardada");
+    } else toast(q.correoPend ? "Guardada. Se manda por correo al subir a Odoo." : orig ? `Revisión ${revOf(q)} guardada` : "Cotización guardada");
     go("/cotizacion/" + q.uuid);
     runSync();
   },
@@ -660,6 +732,41 @@ const ACT = {
       anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2 });
     saveDraft(); go("/nueva");
   },
+  edit: (el) => {
+    const q = quotes.get(el.dataset.uuid);
+    if (!q || q.sync === "conflicto") return;
+    if (S.draft && (S.draft.cliente.nombre || S.draft.items.length) && !confirm("Ya tienes un borrador en curso. ¿Reemplazarlo?")) return;
+    S.draft = newDraft({ uuid: q.uuid, folio: q.folio, rev: revOf(q) + 1, editOf: q.uuid, creadoPor: q.creadoPor,
+      cliente: { ...q.cliente }, canal: q.canal, items: q.items.map((i) => ({ ...i })), desc: q.desc, iva: q.iva,
+      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2 });
+    S.newClient = false; saveDraft(); go("/nueva");
+  },
+  undoRev: (el) => {
+    const q = quotes.get(el.dataset.uuid);
+    if (!q || !q.revPrev) return;
+    if (!confirm(`¿Descartar la revisión ${revOf(q)} y volver a ${folioDe(q.revPrev)}?`)) return;
+    quotes.put(q.revPrev); render();
+  },
+  mail: async (el) => {
+    const q = quotes.get(el.dataset.uuid);
+    if (!q || !esCautivo(q.cliente)) return toast("Correo disponible para clientes con al menos una compra.", 3500);
+    const email = correoCliente(q.cliente);
+    const ya = q.correo && q.correo.rev === revOf(q);
+    const msg = ya
+      ? `Ya se envió por correo el ${new Date(q.correo.fecha).toLocaleDateString("es-MX")} a ${q.correo.email}. ¿Enviarla otra vez?`
+      : `¿Enviar ${folioDe(q)} por correo a ${email}?`;
+    if (!confirm(msg)) return;
+    q.correoPend = { force: !!ya }; q.correoError = ""; quotes.put(q); render();
+    if (!navigator.onLine) return toast("Sin internet. El correo se manda al volver la conexión.", 3500);
+    toast("Enviando correo…");
+    await runSync();
+    const cur = quotes.get(q.uuid);
+    toast(cur.correoError ? cur.correoError : cur.correoPend ? "El correo quedó en cola." : "Correo enviado a " + email, 3500);
+    if (route() === "/cotizacion/" + q.uuid) render();
+  },
+  addFoto: () => document.getElementById("rp-fotos")?.click(),
+  rmFoto: (el) => { RP.fotos.splice(Number(el.dataset.i), 1); drawThumbs(); },
+  sendReport: () => sendReport(),
   lf: (el) => { S.listFilter = el.dataset.v; renderList(); },
   reload: async () => { if (!navigator.onLine) return toast("Sin internet"); toast("Actualizando…"); await refresh(); toast("Catálogo y clientes al día"); if (route().startsWith("/ajustes")) renderSettings(); },
   verify: () => doVerify(),
@@ -670,6 +777,94 @@ const ACT = {
     await clearKeys(); ls.del("user"); S.user = null; go("/login");
   }
 };
+
+// ---------- Reportar un problema ----------
+const RP = { pantalla: "", titulo: "", descripcion: "", fotos: [] };
+const MAX_FOTOS = 5;
+function diagnostico() {
+  return {
+    version: APP_VERSION,
+    usuario: (S.user && S.user.email) || "",
+    userAgent: navigator.userAgent,
+    conexion: navigator.onLine ? "online" : "offline",
+    appInstalada: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
+    porSubir: quotes.all().filter(needsSync).length,
+    erroresSync: ls.get("syncErrors", []),
+    borrador: S.draft ? `${S.draft.folio ? folioDe(S.draft) : "sin folio"} · paso ${S.draft.step}` : "ninguno",
+    pantallaPrevia: S.prevRoute || ""
+  };
+}
+function renderReport() {
+  const dg = diagnostico();
+  $app.innerHTML = `
+    <div class="screen">
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/ajustes" aria-label="Volver">${I.back}</button><h1>Reportar un problema</h1></header>
+      <main class="content">
+        <label class="field">Pantalla<select id="rp-pantalla">
+          <option value="">Elige dónde pasó…</option>${PANTALLAS.map((p) => `<option ${RP.pantalla === p ? "selected" : ""}>${p}</option>`).join("")}
+        </select></label>
+        <label class="field">Nombre del error<input id="rp-titulo" maxlength="120" value="${esc(RP.titulo)}" autocomplete="off" placeholder="Ej. No aparece el botón Enviar"></label>
+        <label class="field">Descripción<textarea id="rp-desc" rows="7" placeholder="¿Qué hacías, qué esperabas y qué pasó?">${esc(RP.descripcion)}</textarea></label>
+        <div class="card"><h3>Fotos (opcional, hasta ${MAX_FOTOS})</h3>
+          <div class="thumbs" id="rp-thumbs"></div>
+          <input type="file" accept="image/*" multiple id="rp-fotos" hidden>
+          <button class="pill soft block" data-act="addFoto" id="rp-add">Agregar fotos</button>
+        </div>
+        <details class="card"><summary class="small">Diagnóstico que se envía con el reporte</summary>
+          <pre class="diag">${esc(Object.entries(dg).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n"))}</pre></details>
+        <button class="pill block" data-act="sendReport" id="rp-send">Enviar reporte</button>
+      </main>
+    </div>`;
+  drawThumbs();
+}
+function drawThumbs() {
+  const box = document.getElementById("rp-thumbs"); if (!box) return;
+  box.innerHTML = RP.fotos.map((f, i) => `<div class="thumb"><img src="${f.url}" alt="Foto ${i + 1}">
+    <button data-act="rmFoto" data-i="${i}" aria-label="Quitar foto ${i + 1}">${I.x}</button></div>`).join("");
+  const add = document.getElementById("rp-add");
+  if (add) add.hidden = RP.fotos.length >= MAX_FOTOS;
+}
+// Reduce la foto en el teléfono: máx. 1600 px por lado, JPEG 0.8.
+async function compressImage(file) {
+  const src = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = src; await img.decode();
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.8);
+  } finally { URL.revokeObjectURL(src); }
+}
+async function addFotos(files) {
+  const libres = MAX_FOTOS - RP.fotos.length;
+  if (files.length > libres) toast(`Solo caben ${MAX_FOTOS} fotos; se agregan las primeras ${libres}.`);
+  for (const f of [...files].slice(0, libres)) {
+    try { RP.fotos.push({ name: f.name.replace(/\.\w+$/, "") + ".jpg", url: await compressImage(f) }); }
+    catch { toast("No se pudo leer una de las fotos"); }
+    drawThumbs();
+  }
+}
+async function sendReport() {
+  const titulo = RP.titulo.trim(), descripcion = RP.descripcion.trim();
+  if (!RP.pantalla || !titulo || !descripcion) return toast("Completa la pantalla, el nombre del error y la descripción.", 3000);
+  const body = {
+    clientId: crypto.randomUUID(), pantalla: RP.pantalla, titulo: titulo.slice(0, 120), descripcion, diag: diagnostico(),
+    fotos: RP.fotos.map((f) => ({ name: f.name, mimetype: "image/jpeg", data: f.url.split(",")[1] }))
+  };
+  const btn = document.getElementById("rp-send"); if (btn) btn.disabled = true;
+  const done = (msg) => { Object.assign(RP, { pantalla: "", titulo: "", descripcion: "", fotos: [] }); go("/ajustes"); toast(msg, 3500); };
+  if (navigator.onLine) {
+    try { const r = await api("reportes", { method: "POST", body }); return done(`Reporte ${r.id} enviado. Gracias.`); }
+    catch (e) {
+      // Errores de datos (400) se muestran; sin red, sin sesión o error de Odoo: a la cola.
+      if (!(e instanceof AuthError) && e.status && e.status < 500) { if (btn) btn.disabled = false; return toast(e.message, 3500); }
+    }
+  }
+  try { await outbox.put(body); }
+  catch { if (btn) btn.disabled = false; return toast("No se pudo guardar el reporte en el teléfono.", 3500); }
+  done(navigator.onLine ? "No se pudo enviar ahora. Se reintenta solo." : "Sin internet. El reporte se enviará al volver la conexión.");
+}
 
 function updateLine(k) {
   const it = S.draft.items[k];
@@ -693,6 +888,8 @@ document.addEventListener("input", (e) => {
   if (t.id === "sq") { SH.text = t.value; SH.pick = null; drawSheet(true); return; }
   if (t.id === "lq") { S.listQuery = t.value; const pos = t.selectionStart; renderList(); const n = document.getElementById("lq"); n.focus(); n.setSelectionRange(pos, pos); return; }
   if (t.id === "sheetq") { SH.q = Math.max(1, Number(t.value) || 1); return; }
+  if (t.id === "rp-titulo") { RP.titulo = t.value; return; }
+  if (t.id === "rp-desc") { RP.descripcion = t.value; return; }
   if (!S.draft) return;
   const line = t.closest(".line");
   if (line && t.dataset.f) {
@@ -707,6 +904,9 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.id === "iva" && S.draft) { S.draft.iva = e.target.checked; saveDraft(); updateMini3(); }
+  if (e.target.id === "porCorreo" && S.draft) { S.draft.porCorreo = e.target.checked; saveDraft(); }
+  if (e.target.id === "rp-pantalla") RP.pantalla = e.target.value;
+  if (e.target.id === "rp-fotos") { const files = [...e.target.files]; e.target.value = ""; addFotos(files); }
 });
 
 boot();

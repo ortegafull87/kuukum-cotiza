@@ -1,6 +1,6 @@
 // PDF de la cotización (jsPDF + autotable + qrcode-generator, todo local para funcionar offline).
 import { calc, money } from "./calc.js";
-import { formatSeal } from "./canonical.js";
+import { formatSeal, folioVisible } from "./canonical.js";
 
 let logoData = null;
 const ICONOS = ["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"];
@@ -33,7 +33,8 @@ export function buildPdf(q, cfg) {
   doc.setTextColor(...navy); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
   doc.text("COTIZACIÓN", W - M, 48, { align: "right" });
   doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(60);
-  doc.text(q.folio + (q.odoo && q.odoo.name ? "  ·  " + q.odoo.name : ""), W - M, 64, { align: "right" });
+  const rev = Number(q.rev) || 1;
+  doc.text(q.folio + (rev > 1 ? "  ·  Revisión " + rev : "") + (q.odoo && q.odoo.name ? "  ·  " + q.odoo.name : ""), W - M, 64, { align: "right" });
   doc.text(fecha(q.fecha), W - M, 78, { align: "right" });
   doc.setFillColor(...menta); doc.rect(0, 102, W, 4, "F");
 
@@ -127,7 +128,7 @@ export function buildPdf(q, cfg) {
   doc.setTextColor(...gris);
   if (cfg.direccion) { doc.text(doc.splitTextToSize(cfg.direccion, maxX - M)[0], M, fy); fy += 12; }
   doc.setFont("courier", "bold"); doc.setFontSize(8.5); doc.setTextColor(...navy);
-  doc.text(`Sello de autenticidad: ${q.folio} · ${formatSeal(q.sello)}`, M, Math.max(fy + 2, H - 22));
+  doc.text(`Sello de autenticidad: ${folioVisible(q.folio, q.rev)} · ${formatSeal(q.sello)}`, M, Math.max(fy + 2, H - 22));
 
   // QR que abre la pantalla Verificar
   try {
@@ -142,7 +143,12 @@ export function buildPdf(q, cfg) {
 }
 
 export function pdfName(q) {
-  return `Cotizacion_${q.folio}_${(q.cliente.nombre || "cliente").replace(/[^\wáéíóúñÁÉÍÓÚÑ]+/g, "_")}.pdf`;
+  return `Cotizacion_${folioVisible(q.folio, q.rev)}_${(q.cliente.nombre || "cliente").replace(/[^\wáéíóúñÁÉÍÓÚÑ]+/g, "_")}.pdf`;
+}
+
+// PDF en base64 para mandarlo por correo desde Odoo.
+export function pdfBase64(q, cfg) {
+  return buildPdf(q, cfg).output("datauristring").split(",")[1];
 }
 
 // Abre la hoja de compartir (WhatsApp) o descarga si el navegador no puede compartir archivos.
@@ -150,7 +156,7 @@ export async function sharePdf(q, cfg) {
   const doc = buildPdf(q, cfg);
   const file = new File([doc.output("blob")], pdfName(q), { type: "application/pdf" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: "Cotización " + q.folio }); return "shared"; }
+    try { await navigator.share({ files: [file], title: "Cotización " + folioVisible(q.folio, q.rev) }); return "shared"; }
     catch (e) { if (e.name === "AbortError") return "cancelled"; }
   }
   doc.save(pdfName(q));

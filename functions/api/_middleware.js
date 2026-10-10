@@ -1,4 +1,4 @@
-import { readSession, getConfig, allowedEmails, fail } from "../../lib/core.js";
+import { readSession, getConfig, allowedEmails, json, fail } from "../../lib/core.js";
 
 // Todo /api/* exige sesión válida de un correo permitido, salvo el login.
 export async function onRequest(context) {
@@ -10,7 +10,8 @@ export async function onRequest(context) {
     const s = await readSession(env, request);
     if (!s) return fail("Sesión vencida. Vuelve a entrar con Google.", 401);
     const cfg = await getConfig(env);
-    if (!allowedEmails(env, cfg).has(s.email)) return fail("Este correo ya no tiene acceso.", 403);
+    // auth: true distingue "sin acceso" de un 403 de regla de negocio (p. ej. correo a cliente no cautivo).
+    if (!allowedEmails(env, cfg).has(s.email)) return json({ error: "Este correo ya no tiene acceso.", auth: true }, 403);
     context.data.user = s;
     context.data.config = cfg;
     return await next();

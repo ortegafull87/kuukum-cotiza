@@ -171,5 +171,19 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .verify { padding: 16px; border-radius: var(--r); display: grid; gap: 8px; }
 .verify.ok { background: var(--accent-soft); }
 .verify.bad { background: #FBE4E4; color: var(--error); }
-@media (prefers-color-scheme: dark) { .verify.bad { background: #3B1414; color: #F08A8A; } }
+.verify.warn { background: #FFF3DC; color: #7A4B00; }
+@media (prefers-color-scheme: dark) { .verify.bad { background: #3B1414; color: #F08A8A; } .verify.warn { background: #3B2C0A; color: #F5C26B; } }
+.toggle span { flex: 1; min-width: 0; padding-right: 12px; overflow-wrap: anywhere; }
+.field select { appearance: none; -webkit-appearance: none; padding-right: 28px;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237A8B8C' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 2px center / 20px; }
+details.card summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+
+/* Reportar un problema */
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.thumbs:empty { display: none; }
+.thumb { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb button { position: absolute; top: 0; right: 0; width: 44px; height: 44px; border: 0; background: none; display: grid; place-items: center; color: #fff; padding: 0; }
+.thumb button svg { width: 28px; height: 28px; padding: 5px; border-radius: 50%; background: rgba(0, 20, 28, .65); stroke-width: 2; }
+.diag { margin: 0; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

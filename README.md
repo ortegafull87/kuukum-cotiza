@@ -1,4 +1,4 @@
-# Kuukum Cotiza (MVP0)
+# Kuukum Cotiza (v0.2)
 
 App web instalable (PWA) para cotizar desde el teléfono, con o sin internet. Sincroniza clientes y cotizaciones con Odoo y comparte el PDF por WhatsApp.
 
@@ -52,6 +52,10 @@ Primera prueba recomendada: entrar con Google **desde el ícono instalado**. iOS
   - Las líneas de "Producto libre" usan el producto `KK-LIBRE`, que se crea solo la primera vez.
 - **Sello**: HMAC-SHA256 del contenido (folio, fecha, cliente, partidas, descuento, IVA, total y anticipo), con una llave derivada por usuario. La llave vive en el teléfono como `CryptoKey` no extraíble. La pantalla **Ajustes → Verificar sello** (o el QR del PDF) muestra lo que realmente se cotizó.
 - **Catálogo**: los chips (prenda, género, material, color, talla, técnica, ubicación) salen del nombre de cada producto en Odoo. Se ocultan los gastos internos y los productos con precio ≤ $1 o más de 20 veces su costo. La lista de ocultos aparece en Ajustes.
+- **Revisiones**: en Detalle, **Editar** abre el asistente con una copia de la cotización. Al guardarla se crea la revisión N+1 con el mismo folio (`KK-L0012-R2`, `-R3`…) y se actualiza la misma `S000xx` en Odoo: se reemplazan las líneas y queda una nota interna en el historial con el total de antes y el de ahora. Si en Odoo ya es pedido o está cancelada, no se toca y la app ofrece **Duplicar**. Los cambios hechos directamente en Odoo no regresan a la app: si alguien edita allá, Odoo manda.
+- **Sellos de revisiones**: la rev 1 usa el canónico `kk-v1` (no cambia) y las revisiones usan `kk-v2` (`kk-v1` + `rev:N`). **Verificar** reconoce un sello de una revisión anterior y muestra los dos totales.
+- **Correo desde Odoo**: solo para clientes cautivos, es decir, con correo y al menos un pedido confirmado (cuentan también los contactos de la misma empresa). La app lo ofrece en el Paso 4 y en Detalle, y el servidor vuelve a validar la regla. El PDF de la app se adjunta a la `S000xx` y Odoo manda el correo con la plantilla de **Ajustes → Correo**. Sin internet queda en cola y se manda después de subir la cotización.
+- **Reportar un problema**: en **Ajustes → Ayuda**. Asigna un ID `CT-0001`, guarda el ticket en KV (`ticket:<ID>`, sin fotos) y lo manda por correo vía Odoo (`mail.mail`) a `reportes_email`, con las fotos adjuntas y un bloque `---ticket---` para un futuro sistema de tickets. Sin internet queda en cola (IndexedDB).
 - **Configuración**: el correo, los teléfonos, las redes, el banco, el anticipo, la entrega, los términos y los correos con acceso se editan en **Ajustes** y aplican para todos.
 
 ## Desarrollo local
@@ -60,3 +64,13 @@ printf 'ODOO_API_KEY=...\nSESSION_SECRET=dev\nSEAL_SECRET=dev\n' > .dev.vars
 npx wrangler pages dev public
 ```
 El login con Google no funciona en `localhost` a menos que lo agregues como origen y redirect en la credencial.
+
+### Pruebas locales (sin tocar el Odoo real)
+```bash
+npm run mock-odoo                      # Odoo simulado en :8069 (estado en memoria, GET /__state para inspeccionarlo)
+npx wrangler pages dev public --port 8788 --persist-to /tmp/kk-kv \
+  --binding ODOO_URL=http://localhost:8069 --binding ODOO_API_KEY=test \
+  --binding SESSION_SECRET=dev --binding SEAL_SECRET=dev
+npm run e2e                            # firma sesión y sellos con SESSION_SECRET/SEAL_SECRET=dev
+```
+Para abrir la app en el navegador sin Google, crea la cookie `kk_session` con `makeSession({SESSION_SECRET:"dev"}, correo, nombre)` de `lib/core.js`.
