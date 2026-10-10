@@ -6,6 +6,8 @@ compatibility_date = "2025-09-01"
 GOOGLE_CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com"
 ALLOWED_EMAILS = "loidaegr@gmail.com,ortegafull87@gmail.com,kuukum.mx@gmail.com"
 ODOO_URL = "https://kuukum.odoo.com"
+# Destino de los correos de "Reportar un problema".
+REPORTES_EMAIL = "hola@kuukum.mx"
 # Solo si Odoo pide la base de datos explícita (normalmente no en odoo.com):
 ODOO_DB = ""
 

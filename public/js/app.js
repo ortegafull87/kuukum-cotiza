@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js?v=0.3.3";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.3.3";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.3.3";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js?v=0.3.3";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.3.3";
-import { openScanner, closeScanner } from "./scanner.js?v=0.3.3";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.3.3";
+import { calc, money, r2, parseMoney } from "./calc.js?v=0.3.4";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.3.4";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.3.4";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError } from "./store.js?v=0.3.4";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.3.4";
+import { openScanner, closeScanner } from "./scanner.js?v=0.3.4";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.3.4";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.3.3";
+const APP_VERSION = "0.3.4";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -609,6 +609,7 @@ function renderDetail(uuid) {
         <button class="pill soft block" data-act="text" data-uuid="${q.uuid}">Mandar como texto</button>
         ${q.sync === "error" ? `<button class="pill ghost block" data-act="sync" data-label="Subiendo…">Reintentar subida</button>` : ""}
         ${odooLink ? `<a class="pill ghost block" style="display:grid;place-items:center;text-decoration:none" href="${odooLink}" target="_blank" rel="noopener">Abrir ${esc(q.odoo.name)} en Odoo</a>` : ""}
+        <button class="pill ghost block" data-act="nav" data-to="/cotizaciones">Ver mis cotizaciones</button>
       </main>
     </div>`;
 }
@@ -632,7 +633,6 @@ const CFG_FIELDS = [
   ["Pago", [["banco", "Banco"], ["clabe", "CLABE"], ["beneficiario", "Beneficiario"], ["anticipo_pct", "Anticipo por defecto %", "numeric"]]],
   ["Condiciones por defecto", [["entrega_texto", "Tiempo de entrega"], ["vigencia_dias", "Vigencia (días)", "numeric"], ["terminos", "Términos y condiciones", "area"]]],
   ["Correo", [["correo_cotizacion", "Mensaje del correo de cotización", "area", "Puedes usar {cliente}, {folio}, {total}, {vigencia} y {whatsapp}. Solo se manda a clientes con al menos una compra."],
-    ["reportes_email", "Correo que recibe los reportes de problemas", "email"],
     ["correo_remitente", "Remitente de los correos (dirección de Odoo)", "email", "Debe ser del dominio de Odoo (p. ej. notifications@kuukum.odoo.com) para no caer en spam."]]],
   ["Acceso", [["usuarios_permitidos", "Correos con acceso (uno por línea)", "area"]]]
 ];
@@ -642,7 +642,7 @@ function renderSettings() {
   $app.innerHTML = `
     <div class="screen">
       <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver">${I.back}</button><h1>Ajustes</h1></header>
-      <main class="content">
+      <main class="content settings">
         ${!navigator.onLine ? `<div class="notice info">Sin internet: puedes ver los ajustes, pero los cambios se guardan cuando haya conexión.</div>` : ""}
         <form id="cfgform" class="content" style="padding:0;gap:14px">
           ${CFG_FIELDS.map(([title, fields]) => `<div class="card"><h3>${title}</h3>${fields.map(([k, label, type, hint]) => {
@@ -664,11 +664,7 @@ function renderSettings() {
         <div class="card"><h3>Ayuda</h3>
           <div class="muted small">¿Algo no funcionó como esperabas? Cuéntanos y lo revisamos.</div>
           <button class="pill soft block" data-act="nav" data-to="/reportar">Reportar un problema</button>
-        </div>
-        <div class="card"><h3>Seguridad</h3>
-          <button class="pill soft block" data-act="nav" data-to="/verificar">Verificar el sello de una cotización</button>
-          <div class="muted small">Sesión: ${esc(S.user.email)}</div>
-          <button class="pill danger block" data-act="logout">Cerrar sesión</button>
+          <div class="muted small">Los reportes llegan al equipo de Kuu Kum.</div>
         </div>
         <div class="card"><h3>Registro del servidor</h3>
           <div class="muted small">Últimos errores de la API y de Odoo, con su código de referencia.</div>
@@ -679,6 +675,14 @@ function renderSettings() {
           <div class="muted small">Cotizaciones guardadas en este teléfono: ${quotes.all().length} · por subir: ${quotes.all().filter(needsSync).length}</div>
           ${S.updateTo ? `<div class="muted small">Disponible: ${esc(S.updateTo)}</div>` : ""}
           <button class="pill soft block" data-act="checkUpdate">Buscar actualización</button>
+        </div>
+        <div class="card"><h3>Verificar</h3>
+          <div class="muted small">Comprueba que una cotización es auténtica.</div>
+          <button class="pill soft block" data-act="nav" data-to="/verificar">Verificar el sello de una cotización</button>
+        </div>
+        <div class="card"><h3>Sesión</h3>
+          <div class="muted small">Sesión: ${esc(S.user.email)}</div>
+          <button class="pill danger block" data-act="logout">Cerrar sesión</button>
         </div>
       </main>
     </div>`;

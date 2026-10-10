@@ -232,3 +232,5 @@ body.has-update .login { padding-top: calc(84px + var(--safe-top)); }
 .logrow { display: grid; gap: 4px; padding: 12px 2px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 /* Con el motivo de "Siguiente" visible, el toast sube para no taparlo. */
 body:has(#why:not([hidden])) #toast { bottom: calc(176px + env(safe-area-inset-bottom)); }
+/* Ajustes no tiene barra fija abajo: solo el margen del indicador de inicio. */
+.content.settings { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }

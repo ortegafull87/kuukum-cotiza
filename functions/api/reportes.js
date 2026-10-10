@@ -49,6 +49,9 @@ export async function onRequestPost({ request, env, data }) {
   }
 
   data.log.ticket = id;
+  // Destino de los reportes: variable de entorno (wrangler.toml [vars]). Sin valor por defecto a propósito.
+  const to = String(env.REPORTES_EMAIL || "").trim();
+  if (!to) return fail(`Reporte ${id} guardado, pero falta configurar REPORTES_EMAIL en el servidor.`, 500);
   try {
     const call = odoo(env, data.log);
     const attIds = [];
@@ -59,7 +62,6 @@ export async function onRequestPost({ request, env, data }) {
     // Todo el diagnóstico en JSON, para el futuro sistema de tickets.
     const full = JSON.stringify({ ticket: { ...t, diag: undefined }, diag: t.diag, servidor: t.servidor }, null, 2);
     attIds.push(await createAttachment(call, { name: `diagnostico-${id}.json`, mimetype: "application/json" }, b64utf8(full)));
-    const to = String(data.config.reportes_email || "hola@kuukum.com").trim();
     const [mailId] = await call("mail.mail", "create", {
       vals_list: [{
         subject: `[Cotiza App][${id}][${pantalla}] ${titulo}`,

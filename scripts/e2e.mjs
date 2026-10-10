@@ -163,7 +163,7 @@ let r = await api("reportes", rep);
 ok(r.status === 200 && /^CT-\d{4}$/.test(r.data.id), "reporte -> ID CT-000N", r);
 const mail = (await state())["mail.mail"].at(-1);
 ok(mail && mail.subject === `[Cotiza App][${r.data.id}][Paso 2 Productos] No suma bien`, "asunto del correo", mail && mail.subject);
-ok(mail && mail.email_to === "hola@kuukum.com" && mail.reply_to === EMAIL && mail.auto_delete === false && mail.state === "sent", "destino, reply_to, enviado", mail);
+ok(mail && mail.email_to === "hola@kuukum.mx" && mail.reply_to === EMAIL && mail.auto_delete === false && mail.state === "sent", "destino, reply_to, enviado", mail);
 ok(mail && mail.email_from === '"Cotiza App" <notifications@kuukum.odoo.com>', "remitente de Odoo (no el correo del usuario)", mail && mail.email_from);
 const atts = (await state())["ir.attachment"].filter((a) => mail.attachment_ids[0][2].includes(a.id));
 ok(atts.length === 4 && atts.filter((a) => a.mimetype === "image/jpeg").length === 3, "3 fotos adjuntas + JSON", atts.map((a) => a.name));
@@ -193,6 +193,13 @@ ok(r.status === 400, "pantalla inválida -> 400");
   const r1 = await api("reportes", { ...rep, clientId: "vacio-" + run, fotos: [{ ...foto, data: "data:image/jpeg;base64," + foto.data }] });
   const m1 = (await state())["mail.mail"].at(-1);
   ok(r1.status === 200 && r1.data.id === r0.data.error.match(/CT-\d{4}/)[0] && m1.attachment_ids[0][2].length === 2, "al reintentar se manda el mismo ticket (prefijo data: aceptado)", r1);
+}
+
+// 8c. reportes_email ya no es configurable (ahora es env.REPORTES_EMAIL)
+{
+  const r = await fetch(APP + "/api/config", { method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ reportes_email: "otro@ejemplo.com" }) });
+  const cfg = await r.json();
+  ok(r.status === 200 && !("reportes_email" in cfg), "PUT /api/config ignora reportes_email", cfg.reportes_email);
 }
 
 // 9. Sesión de un correo sin acceso -> 403 con auth:true
