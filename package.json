@@ -10,5 +10,9 @@
     "predeploy": "node scripts/check-version.mjs",
     "deploy": "wrangler pages deploy public --project-name kuukum-cotiza --branch main"
   },
-  "devDependencies": { "wrangler": "^4.40.0" }
+  "devDependencies": {
+    "sharp": "^0.35.5",
+    "simple-icons": "^16.34.0",
+    "wrangler": "^4.40.0"
+  }
 }

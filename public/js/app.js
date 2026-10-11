@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js?v=0.4.1";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.1";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.1";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.1";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.1";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.1";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.1";
+import { calc, money, r2, parseMoney } from "./calc.js?v=0.4.2";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.2";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.2";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.2";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.2";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.2";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.2";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.4.2";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -27,10 +27,7 @@ const I = {
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.5l2 1.2M17.8 15.3l2 1.2M4.2 16.5l2-1.2M17.8 8.7l2-1.2"/><circle cx="12" cy="12" r="7"/></svg>',
-  doc: '<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/></svg>',
-  new: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M12 9v6M9 12h6"/></svg>',
   sync: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>',
-  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg>',
   qr: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18v2M18 18h2v2"/></svg>',
   shield: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'
 };
@@ -231,6 +228,12 @@ function render() {
 function renderRoute() {
   const r = route();
   closeSheet(); closeScanner();
+  // Ajustes regresa a donde se abrió: al asistente (el borrador sigue donde estaba) o a la lista.
+  // (Registro, Verificar y Reportar se abren desde Ajustes: no cambian a dónde regresa.)
+  if (r.startsWith("/ajustes") && S.prevRoute) {
+    if (S.prevRoute.startsWith("/nueva")) S.volverDeAjustes = "/nueva";
+    else if (S.prevRoute.startsWith("/cotizacion")) S.volverDeAjustes = "/cotizaciones";
+  }
   if (r.startsWith("/login") || (!S.user && !r.startsWith("/verificar"))) return renderLogin();
   if (!S.cfg) S.cfg = {};
   if (r.startsWith("/reportar")) return renderReport();
@@ -253,11 +256,6 @@ function pillHtml() {
 }
 function renderPill() { const el = document.getElementById("pill"); if (el) el.innerHTML = pillHtml(); }
 
-const tabbar = (on) => `
-  <nav class="tabbar">
-    <button class="tab ${on === "nueva" ? "on" : ""}" data-act="nav" data-to="/nueva">${I.new}Nueva</button>
-    <button class="tab ${on === "lista" ? "on" : ""}" data-act="nav" data-to="/cotizaciones">${I.doc}Cotizaciones</button>
-  </nav>`;
 const authBanner = () => S.authExpired ? `<div class="notice">Tu sesión venció. Las cotizaciones se guardan, pero no suben a Odoo hasta que entres de nuevo. <button class="pill soft" style="margin-top:8px;height:40px" data-act="nav" data-to="/login">Entrar con Google</button></div>` : "";
 
 // ---------- Login ----------
@@ -324,7 +322,7 @@ function renderWizard() {
     <div class="screen">
       <header class="wiz-head">
         <div class="row"><h1>${d.editOf ? "Editar cotización" : "Nueva cotización"}</h1>${d.folio ? `<span class="num muted small">${esc(folioDe(d))}</span>` : ""}
-          <button class="icon-btn lock" data-act="logout" aria-label="Cerrar sesión">${I.lock}</button></div>
+          <button class="icon-btn" data-act="nav" data-to="/ajustes" aria-label="Ajustes">${I.gear}</button></div>
         <div class="progress">${STEPS.map((_, i) => `<span class="${i < n ? "on" : ""}"></span>`).join("")}</div>
         <div class="step-name">Paso ${n} de 4 · ${STEPS[n - 1]}</div>
       </header>
@@ -602,7 +600,7 @@ function renderList() {
         ${S.verOcultas ? `<button class="linkbtn" data-act="verOcultas" data-v="0">Volver a todas</button>`
           : ocultas ? `<button class="linkbtn" data-act="verOcultas" data-v="1">Ver ocultas (${ocultas})</button>` : ""}
       </main>
-      ${tabbar("lista")}
+      <div class="fab"><button class="act" data-act="nav" data-to="/nueva"><span class="c">${I.plus}</span>Nueva</button></div>
     </div>`;
   checkEstados();
 }
@@ -684,7 +682,7 @@ function renderSettings() {
   const users = c.usuarios_permitidos || "loidaegr@gmail.com\nortegafull87@gmail.com\nkuukum.mx@gmail.com";
   $app.innerHTML = `
     <div class="screen">
-      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="/cotizaciones" aria-label="Volver a cotizaciones">${I.back}</button><h1>Ajustes</h1></header>
+      <header class="topbar"><button class="icon-btn" data-act="nav" data-to="${S.volverDeAjustes === "/nueva" ? "/nueva" : "/cotizaciones"}" aria-label="${S.volverDeAjustes === "/nueva" ? "Volver a la cotización" : "Volver a cotizaciones"}">${I.back}</button><h1>Ajustes</h1></header>
       <main class="content settings">
         ${!navigator.onLine ? `<div class="notice info">Sin internet: puedes ver los ajustes, pero los cambios se guardan cuando haya conexión.</div>` : ""}
         <form id="cfgform" class="content" style="padding:0;gap:14px">

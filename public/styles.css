@@ -36,8 +36,6 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .topbar h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.01em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .content { flex: 1; padding: 4px 16px calc(120px + env(safe-area-inset-bottom)); display: grid; gap: 14px; align-content: start; max-width: 560px; width: 100%; margin: 0 auto; }
 .icon-btn { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--surface-2); display: grid; place-items: center; color: var(--fg); flex: none; }
-.icon-btn.lock { background: #FBE4E4; color: var(--error); }
-@media (prefers-color-scheme: dark) { .icon-btn.lock { background: #3B1414; color: #F08A8A; } }
 .icon-btn svg, .act svg { width: 22px; height: 22px; }
 svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -47,11 +45,10 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 @media (prefers-color-scheme: dark) { .sync-pill.pend { background: #3B2C0A; color: #F5C26B; } .sync-pill.err { background: #3B1414; color: #F08A8A; } }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
-/* ---------- Barra de pestañas ---------- */
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center; gap: 8px; z-index: 5; }
-.tab { flex: 1; max-width: 200px; height: 52px; border-radius: 16px; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; align-content: center; gap: 2px; font-size: 12px; font-weight: 600; }
-.tab svg { width: 24px; height: 24px; }
-.tab.on { background: var(--accent-soft); color: var(--fg); }
+/* ---------- Botón flotante "Nueva" (mismo componente redondo que el asistente) ---------- */
+.fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 5; }
+.fab .c { box-shadow: 0 6px 18px rgba(0, 20, 28, .28); }
+.fab .act { color: var(--fg); }
 
 /* ---------- Asistente ---------- */
 .wiz-head { padding: calc(12px + var(--safe-top)) 16px 6px; max-width: 560px; width: 100%; margin: 0 auto; }

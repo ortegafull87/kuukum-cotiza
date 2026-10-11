@@ -1,7 +1,7 @@
 // PDF de la cotización (jsPDF + autotable + qrcode-generator, todo local para funcionar offline).
-import { calc, money } from "./calc.js?v=0.4.1";
-import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.4.1";
-import { logError } from "./store.js?v=0.4.1";
+import { calc, money } from "./calc.js?v=0.4.2";
+import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.4.2";
+import { logError } from "./store.js?v=0.4.2";
 
 let logoData = null;
 const ICONOS = ["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"];
@@ -117,12 +117,14 @@ export function buildPdf(q, cfg) {
   ].filter(([, v]) => v);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(50);
   const ic = 10, rowH = 15;
+  // Ícono y texto centrados en la misma línea: base del texto = centro del ícono + media altura de mayúsculas (Helvetica ≈ 0.72 em).
+  const base = ic / 2 + (doc.getFontSize() * 0.72) / 2;
   let fx = M, fy = footTop + 26;
   for (const [k, v] of items) {
     const w = ic + 4 + doc.getTextWidth(v) + 14;
     if (fx + w - 14 > maxX && fx > M) { fx = M; fy += rowH; }
     if (iconData[k]) { try { doc.addImage(iconData[k], "PNG", fx, fy, ic, ic); } catch {} }
-    doc.text(v, fx + ic + 4, fy + 7.8);
+    doc.text(v, fx + ic + 4, fy + base);
     fx += w;
   }
   fy += rowH + 10;
