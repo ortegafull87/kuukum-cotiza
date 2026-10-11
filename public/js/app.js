@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js?v=0.4.3";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.3";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.3";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.3";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.3";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.3";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.3";
+import { calc, money, r2, parseMoney } from "./calc.js?v=0.4.4";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.4";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.4";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.4";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.4";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.4";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.4";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.3";
+const APP_VERSION = "0.4.4";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 const STEPS = ["Cliente", "Productos", "Condiciones", "Verificar"];
@@ -761,7 +761,7 @@ function renderVerify([folio = "", sello = ""] = []) {
         <button class="pill block big" data-act="scan">${I.qr}<span>Escanear QR</span></button>
         <div id="vres"></div>
         <details class="card" id="vmanual" ${prefill ? "open" : ""}><summary>Ingresar manualmente</summary>
-          <label class="field">Folio<input id="vf" class="num" value="${esc(folio)}" autocapitalize="characters" placeholder="KK-L0012"></label>
+          <label class="field">Folio<input id="vf" class="num" value="${esc(folio)}" autocapitalize="characters" placeholder="AP-L0012"></label>
           <label class="field">Sello<input id="vs" class="num" value="${esc(formatSeal(sello))}" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
           <button class="pill block" data-act="verify" id="vbtn">Verificar</button>
         </details>

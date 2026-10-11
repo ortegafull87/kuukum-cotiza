@@ -7,7 +7,7 @@ import { cleanSeal, splitFolio } from "../../public/js/canonical.js";
 // cancelada o eliminada sigue siendo auténtico, pero la cotización ya no está vigente.
 export async function onRequestGet({ request, env, data }) {
   const u = new URL(request.url);
-  const { folio } = splitFolio(u.searchParams.get("folio"));   // acepta KK-L0012-R2
+  const { folio } = splitFolio(u.searchParams.get("folio"));   // acepta AP-L0012-R2 y KK-L0012-R2
   const sello = cleanSeal(u.searchParams.get("sello"));
   if (!folio || !sello) return fail("Escribe el folio y el sello.");
   const rec = await env.KK.get("seal:" + folio, "json");

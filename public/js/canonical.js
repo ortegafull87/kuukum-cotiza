@@ -23,9 +23,19 @@ export function canonical(q, t) {
   return lines.join("\n");
 }
 
-// Folio visible: KK-L0012 (rev 1), KK-L0012-R2, -R3…
+// ---------- Folios ----------
+// Las cotizaciones nuevas usan AP-<letra del usuario><consecutivo> (AP-K0006). Las anteriores conservan KK-… y siguen
+// valiendo en todos lados. La letra por usuario evita folios repetidos entre teléfonos sin conexión; el consecutivo
+// es uno solo por usuario para los dos prefijos (no se reinicia).
+export const FOLIO_PREFIX = "AP";
+export const FOLIO_RE = /^(KK|AP)-[A-Z]\d{4,}(-R\d+)?$/;   // \d{4,}: a partir de la 10000 son 5 dígitos
+export const nuevoFolio = (letra, n) => `${FOLIO_PREFIX}-${letra}${String(n).padStart(4, "0")}`;
+// Consecutivo de un folio de cualquiera de los dos prefijos ("KK-K0005" -> 5); 0 si no es un folio.
+export const folioNumero = (folio) => { const m = /^(?:KK|AP)-[A-Z](\d+)/.exec(String(folio || "")); return m ? Number(m[1]) : 0; };
+
+// Folio visible: AP-L0012 (rev 1), AP-L0012-R2, -R3… (igual con KK-)
 export const folioVisible = (folio, rev) => (Number(rev) > 1 ? `${folio}-R${Number(rev)}` : String(folio || ""));
-// "KK-L0012-R2" o "KK-L0012 · R2" -> { folio: "KK-L0012", rev: 2 }
+// "AP-L0012-R2" o "KK-L0012 · R2" -> { folio: "AP-L0012", rev: 2 }
 export function splitFolio(s) {
   const t = String(s || "").trim().toUpperCase().replace(/\s*·\s*R(\d+)$/, "-R$1");
   const m = t.match(/^(.*\d)-R(\d+)$/);

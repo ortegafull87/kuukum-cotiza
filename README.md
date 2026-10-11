@@ -45,7 +45,7 @@ Para `SESSION_SECRET` la regla es otra: cambiarlo cierra la sesión de todos los
 Primera prueba recomendada: entrar con Google **desde el ícono instalado**. iOS maneja las PWAs instaladas con su propio almacenamiento. Si el login no regresa a la app, entra primero desde Safari y luego agrégala a la pantalla de inicio.
 
 ## Cómo funciona
-- **Folios**: `KK-` + la letra del usuario + un consecutivo (`KK-L0012`). Al sincronizar, Odoo le asigna su número `S000xx`. El folio de la app queda en *Referencia del cliente*.
+- **Folios**: `AP-` + la letra del usuario + un consecutivo (`AP-L0012`); las cotizaciones anteriores conservan `KK-L0012` y siguen funcionando (QR, Verificar, revisiones). El consecutivo es uno por usuario para los dos prefijos: después de `KK-K0005` sigue `AP-K0006`. El prefijo vive en `FOLIO_PREFIX` (`public/js/canonical.js`). Al sincronizar, Odoo le asigna su número `S000xx` y el folio de la app queda en *Referencia del cliente*.
 - **Sync**: guarda todo en el teléfono y lo sube a Odoo en cuanto hay internet. Ocurre al abrir la app, al recuperar la conexión, cada minuto si hay pendientes, o tocando el indicador de sync. Es idempotente: reintentar no duplica cotizaciones en Odoo.
 - **Qué crea en Odoo**:
   - `sale.order` en borrador, con cliente, canal (`source_id`), vigencia, términos, líneas con descuento, IVA (impuesto id 14) y costo (`purchase_price`).

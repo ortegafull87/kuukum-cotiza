@@ -2,7 +2,8 @@
 // Uso: node scripts/e2e.mjs [http://localhost:8788] [http://localhost:8069] [archivo con la salida de wrangler]
 import { makeSession, sealFor } from "../lib/core.js";
 import { calc } from "../public/js/calc.js";
-import { canonical } from "../public/js/canonical.js";
+import { canonical, FOLIO_RE, folioNumero, FOLIO_PREFIX } from "../public/js/canonical.js";
+import { nextFolio } from "../public/js/store.js";
 import { parseQr } from "../public/js/scanner.js";
 import { qrText } from "../public/js/pdf.js";
 
@@ -74,6 +75,15 @@ async function quote(over = {}) {
   const hash = createHash("sha256").update(inline).digest("base64");
   ok(pub("_headers").includes(`'sha256-${hash}'`), "CSP permite el script en línea de la red de seguridad (hash al día)", hash);
   ok(!/localStorage\.(clear|removeItem)|indexedDB\.deleteDatabase/.test(inline), "la red de seguridad no borra localStorage ni IndexedDB");
+}
+
+// 0d. Folios AP- (v0.4.4) y compatibilidad con KK-
+{
+  const validos = ["AP-K0006", "KK-K0005", "AP-L0012-R2", "KK-L0012-R3", "AP-V10000"];
+  const invalidos = ["XX-K0001", "AP-K12", "ap-k0006", "AP-K0006-R", "KK-0005", "AP-KK0006"];
+  ok(validos.every((f) => FOLIO_RE.test(f)) && !invalidos.some((f) => FOLIO_RE.test(f)), "regex de folio: acepta KK- y AP- (con -Rn), rechaza lo demás");
+  ok(FOLIO_PREFIX === "AP" && folioNumero("KK-K0005") === 5 && folioNumero("AP-K0006-R2") === 6, "folioNumero entiende los dos prefijos");
+  ok(nextFolio({ email: "kuukum.mx@gmail.com", prefijo: "K", ultimoFolio: 5 }) === "AP-K0006", "después de KK-K0005 sigue AP-K0006 (no se reinicia)");
 }
 
 // 1. Clientes cautivos
@@ -200,6 +210,27 @@ ok(r.status === 400, "pantalla inválida -> 400");
   const r = await fetch(APP + "/api/config", { method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ reportes_email: "otro@ejemplo.com" }) });
   const cfg = await r.json();
   ok(r.status === 200 && !("reportes_email" in cfg), "PUT /api/config ignora reportes_email", cfg.reportes_email);
+}
+
+// 8c2. Folio AP-: sello, client_order_ref, contador del servidor, Verificar y QR; revisión de una KK- conserva su prefijo
+{
+  const me0 = (await api("me")).data.ultimoFolio;
+  const ap = await quote({ folio: "AP-V" + String(me0 + 1).padStart(4, "0") });
+  const r = await api("sync", { quote: ap });
+  ok(r.status === 200 && (await order(r.data.id)).client_order_ref === ap.folio, "folio AP- sube con client_order_ref AP-…", r.data);
+  ok((await api("me")).data.ultimoFolio === me0 + 1, "el contador del servidor sigue con el número del folio AP-");
+  let v = await api(`verificar?folio=${ap.folio}&sello=${ap.sello}`);
+  ok(v.data.estado === "autentica", "Verificar acepta AP-", v.data);
+  const { parseQr } = await import("../public/js/scanner.js");
+  const { qrText } = await import("../public/js/pdf.js");
+  ok(JSON.stringify(parseQr(qrText(ap))) === JSON.stringify({ folio: ap.folio, sello: ap.sello }) && parseQr(qrText({ folio: "KK-K0005", sello: ap.sello })).folio === "KK-K0005", "QR con folio AP- y KK-");
+  const kk = await quote({ folio: "KK-V0005" });
+  await api("sync", { quote: kk });
+  const kk2 = await quote({ uuid: kk.uuid, folio: "KK-V0005", rev: 2, historial: [{ rev: 1, sello: kk.sello, total: 1800, fecha: kk.fecha }] });
+  const r2 = await api("sync", { quote: kk2 });
+  ok(r2.status === 200 && (await order(r2.data.id)).client_order_ref === "KK-V0005-R2", "revisión de una KK- vieja conserva su prefijo: KK-V0005-R2");
+  v = await api(`verificar?folio=KK-V0005-R2&sello=${kk2.sello}`);
+  ok(v.data.estado === "autentica" && v.data.rev === 2, "Verificar KK-…-R2 sigue funcionando", v.data);
 }
 
 // 8d. v0.4: estado de Odoo reflejado (cancelada, eliminada, confirmada) y protecciones

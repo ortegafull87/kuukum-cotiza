@@ -1,7 +1,7 @@
 import { json, fail, sealFor, allowedEmails } from "../../lib/core.js";
 import { odoo, getOrCreate, markSent, leerOrden, MSG_ESTADO } from "../../lib/odoo.js";
 import { calc, money } from "../../public/js/calc.js";
-import { folioVisible, cleanSeal } from "../../public/js/canonical.js";
+import { folioVisible, cleanSeal, folioNumero } from "../../public/js/canonical.js";
 
 const CANALES = { WA: "WhatsApp", IG: "Instagram", FB: "Facebook", TT: "TikTok", OT: "Otro" };
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -37,7 +37,7 @@ export async function onRequestPost({ request, env, data }) {
       rec = { id, name, partnerId: vals.partner_id, enviada: false, rev };
       await env.KK.put(syncKey, JSON.stringify(rec));
       await env.KK.put(sealKey, JSON.stringify(sealRecord(q, t, autor, name, mergeHistorial(null, q.historial, rev))));
-      const n = Number(String(q.folio).replace(/\D/g, "")) || 0;
+      const n = folioNumero(q.folio);   // KK- o AP-: un solo consecutivo por usuario
       const prevN = Number(await env.KK.get("folio:" + autor)) || 0;
       if (n > prevN) await env.KK.put("folio:" + autor, String(n));
     } else if (rev > (rec.rev || 1)) {

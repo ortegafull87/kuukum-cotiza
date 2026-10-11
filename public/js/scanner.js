@@ -1,8 +1,8 @@
 // Lector del QR de la cotización: cámara trasera o foto/captura. Decodifica con jsQR (vendor, funciona offline;
 // iOS no tiene BarcodeDetector).
-import { cleanSeal } from "./canonical.js?v=0.4.3";
+import { cleanSeal, FOLIO_RE } from "./canonical.js?v=0.4.4";
 
-// "KUUKUM|V1|KK-L0012-R2|7F3A9C214B8ED015" (nuevo) o la URL vieja ".../#/verificar/FOLIO/SELLO".
+// "KUUKUM|V1|AP-L0012-R2|7F3A9C214B8ED015" (nuevo; también con folios KK-) o la URL vieja ".../#/verificar/FOLIO/SELLO".
 export function parseQr(text) {
   const t = String(text || "").trim();
   let m = t.match(/^KUUKUM\|V1\|([^|\s]+)\|([0-9A-Za-z-]+)$/);
@@ -10,7 +10,7 @@ export function parseQr(text) {
   if (!m) return null;
   let folio, sello;
   try { folio = decodeURIComponent(m[1]).toUpperCase(); sello = cleanSeal(decodeURIComponent(m[2])); } catch { return null; }
-  return /^KK-/.test(folio) && sello.length === 16 ? { folio, sello } : null;
+  return FOLIO_RE.test(folio) && sello.length === 16 ? { folio, sello } : null;
 }
 
 const NO_KUUKUM = "Este código no es de una cotización Kuu Kum";

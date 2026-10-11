@@ -1,7 +1,7 @@
 // PDF de la cotización (jsPDF + autotable + qrcode-generator, todo local para funcionar offline).
-import { calc, money } from "./calc.js?v=0.4.3";
-import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.4.3";
-import { logError } from "./store.js?v=0.4.3";
+import { calc, money } from "./calc.js?v=0.4.4";
+import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.4.4";
+import { logError } from "./store.js?v=0.4.4";
 
 let logoData = null;
 const ICONOS = ["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"];
@@ -11,7 +11,7 @@ const toDataUrl = async (url) => {
   return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
 };
 // Imágenes con ?v= (lo cambia bump-version.mjs): si cambian los íconos, el teléfono no reusa los viejos de su caché.
-const IMG_V = "?v=0.4.3";
+const IMG_V = "?v=0.4.4";
 export async function preloadLogo() {
   if (!logoData) logoData = await toDataUrl("/img/logo.png" + IMG_V);
   await Promise.all(ICONOS.filter((k) => !iconData[k]).map(async (k) => { iconData[k] = await toDataUrl(`/img/redes/${k}.png${IMG_V}`); }));

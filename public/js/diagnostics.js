@@ -1,7 +1,7 @@
 // Diagnóstico para "Reportar un problema". Solo lo que el navegador expone.
 // Nunca: ubicación, contactos, cookies, tokens de sesión, la llave del sello ni datos de clientes (salvo el folio del borrador).
 // iOS: Safari no deja conocer el modelo exacto del iPhone; versión de iOS + pantalla + densidad bastan para la familia.
-import { ls, quotes, needsSync, hasSealKey, recentErrors } from "./store.js?v=0.4.3";
+import { ls, quotes, needsSync, hasSealKey, recentErrors } from "./store.js?v=0.4.4";
 
 const safe = async (fn, d = "desconocido") => { try { const v = await fn(); return v === undefined ? d : v; } catch { return d; } };
 const kb = (n) => Math.round(n / 1024) + " KB";

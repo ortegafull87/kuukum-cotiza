@@ -1,6 +1,6 @@
 // Datos locales, llamadas a la API, cola de sincronización y sello.
-import { calc } from "./calc.js?v=0.4.3";
-import { canonical, sealFromBytes } from "./canonical.js?v=0.4.3";
+import { calc } from "./calc.js?v=0.4.4";
+import { canonical, sealFromBytes, nuevoFolio, folioNumero } from "./canonical.js?v=0.4.4";
 
 // ---------- localStorage ----------
 export const ls = {
@@ -103,11 +103,14 @@ export const quotes = {
   remove(uuid) { ls.set("quotes", this.all().filter((x) => x.uuid !== uuid)); }
 };
 
+// Siguiente folio: el número más alto conocido del usuario (contador del teléfono, el del servidor y sus cotizaciones
+// locales, sean KK- o AP-) + 1, con el prefijo nuevo. Después de KK-K0005 sigue AP-K0006.
 export function nextFolio(user) {
   const key = "folio_" + user.email;
-  const n = Math.max(ls.get(key, 0), user.ultimoFolio || 0) + 1;
+  const locales = quotes.all().filter((q) => q.creadoPor === user.email).map((q) => folioNumero(q.folio));
+  const n = Math.max(ls.get(key, 0), user.ultimoFolio || 0, ...locales) + 1;
   ls.set(key, n);
-  return `KK-${user.prefijo}${String(n).padStart(4, "0")}`;
+  return nuevoFolio(user.prefijo, n);
 }
 
 // ---------- Cola de sincronización ----------
