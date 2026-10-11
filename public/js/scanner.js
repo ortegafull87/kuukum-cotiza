@@ -1,6 +1,6 @@
 // Lector del QR de la cotización: cámara trasera o foto/captura. Decodifica con jsQR (vendor, funciona offline;
 // iOS no tiene BarcodeDetector).
-import { cleanSeal, FOLIO_RE } from "./canonical.js?v=0.4.4";
+import { cleanSeal, FOLIO_RE } from "./canonical.js?v=0.4.5";
 
 // "KUUKUM|V1|AP-L0012-R2|7F3A9C214B8ED015" (nuevo; también con folios KK-) o la URL vieja ".../#/verificar/FOLIO/SELLO".
 export function parseQr(text) {

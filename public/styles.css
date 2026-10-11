@@ -98,6 +98,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .chips::-webkit-scrollbar { display: none; }
 .chip { flex: none; height: 40px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; font-size: 15px; font-weight: 500; white-space: nowrap; }
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+/* Canal: botones redondos solo con ícono (5 × 56px + 4 × 12px = 328px, caben en 390px con márgenes de 16px). */
+.canales { display: flex; gap: 12px; padding: 2px 0; }
+.canal { flex: none; width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--fg); display: grid; place-items: center; padding: 0; font-size: 14px; font-weight: 600; }
+.canal svg { width: 26px; height: 26px; fill: currentColor; stroke: none; }
+.canal.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 .pill { height: var(--tap); padding: 0 20px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 16px; line-height: 1; }
 .pill.soft { background: var(--accent-soft); color: var(--fg); }
 .pill.ghost { background: transparent; border: 1.5px solid var(--line); color: var(--fg); }
