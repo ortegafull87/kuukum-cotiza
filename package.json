@@ -8,6 +8,7 @@
     "e2e": "node scripts/e2e.mjs",
     "check:version": "node scripts/check-version.mjs",
     "predeploy": "node scripts/check-version.mjs",
+    "prepare": "git config core.hooksPath .githooks",
     "deploy": "wrangler pages deploy public --project-name kuukum-cotiza --branch main"
   },
   "devDependencies": {
