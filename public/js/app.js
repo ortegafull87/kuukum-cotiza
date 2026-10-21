@@ -1,14 +1,14 @@
-import { calc, money, r2, parseMoney } from "./calc.js?v=0.4.5";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.5";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.5";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.5";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.5";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.5";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.5";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.6";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.6";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.6";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.6";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.6";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.6";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.6";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.5";
+const APP_VERSION = "0.4.6";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 // Glifos oficiales de Simple Icons (CC0), los mismos de los íconos del PDF (scripts/build-redes-icons.mjs).
@@ -336,6 +336,7 @@ function renderWizard() {
       <main class="content" id="step">${[0, stepCliente, stepProductos, stepCondiciones, stepVerificar][n]()}</main>
       <div class="actions" id="wizact"><div class="why" id="why" role="status" aria-live="polite" ${n < 4 && stepIssue(n) ? "" : "hidden"}>${n < 4 ? esc(stepIssue(n)) : ""}</div>${wizActions(n)}</div>
     </div>`;
+  if (n === 2) document.querySelectorAll(".line .name").forEach(fitName);
   if (n === 4) prepareSeal();
 }
 function wizActions(n) {
@@ -407,28 +408,51 @@ function stepProductos() {
     ${d.items.length ? `<div class="card" id="mini">${miniTotals()}</div>` : ""}`;
 }
 function lineCard(it, k) {
+  const aviso = lineAviso(it);
   return `
     <div class="line ${Number(it.p) > 0 ? "" : "warn"}" data-k="${k}">
-      <input class="name field" data-f="n" value="${esc(it.n)}" aria-label="Descripción" style="border:0;border-bottom:1.5px solid var(--line);background:none;min-height:40px;font-weight:600;font-size:15px;outline:none;width:100%">
-      <div class="row">
+      <textarea class="name" data-f="n" rows="1" enterkeyhint="next" aria-label="Descripción">${esc(it.n)}</textarea>
+      <div class="lrow"><span>Cantidad</span>
         <div class="stepper">
           <button data-act="qty" data-d="-1" aria-label="Menos">${I.minus}</button>
-          <input data-f="q" inputmode="numeric" value="${it.q}" aria-label="Cantidad">
+          <input data-f="q" inputmode="numeric" enterkeyhint="next" value="${it.q}" aria-label="Cantidad">
           <button data-act="qty" data-d="1" aria-label="Más">${I.plus}</button>
-        </div>
-        <label class="field">Precio unit.<input class="num" data-f="p" inputmode="decimal" value="${it.p}"></label>
-        <label class="field">Tu costo<input class="num" data-f="c" inputmode="decimal" value="${it.c}"></label>
-      </div>
-      <div class="foot"><button class="link-del" data-act="delLine">Quitar</button>
-        <span class="lf">Ganas ${money(it.q * (it.p - it.c))} · <b class="num">${money(it.q * it.p)}</b></span></div>
+        </div></div>
+      <label class="lrow"><span>Tu costo</span><span class="lv">$<input class="num" data-f="c" inputmode="decimal" enterkeyhint="next" value="${it.c}"></span></label>
+      <label class="lrow"><span>Ganancia</span><span class="lv"><input class="num ${margenCls(it)}" data-f="m" inputmode="decimal" enterkeyhint="next" placeholder="—" value="${margenTxt(it)}">%</span></label>
+      <div class="lmsg" role="status" ${aviso ? "" : "hidden"}>${aviso}</div>
+      <label class="lrow"><span>Precio unit.</span><span class="lv">$<input class="num" data-f="p" inputmode="decimal" enterkeyhint="next" value="${it.p}"></span></label>
+      <div class="foot lf">${lineFoot(it)}</div>
+      <div><button class="link-del" data-act="delLine">Quitar</button></div>
     </div>`;
 }
+const lineFoot = (it) => `<span>Ganas ${money(it.q * (it.p - it.c))}</span><span>Total <b class="num">${money(it.q * it.p)}</b></span>`;
+// Ganancia de la línea: lo que ella escribió si el % está fijo; si no, el margen del precio con 1 decimal.
+function margenTxt(it) {
+  if (it.fijo === "m" && it.m != null) return String(it.m);
+  const m = margenLinea(it.p, it.c);
+  return m === null ? "" : m.toFixed(1);
+}
+function lineAviso(it) {
+  if (it.fijo !== "m" || it.m == null) return "";
+  if (it.m > MARGEN_MAX) return `El margen máximo es ${MARGEN_MAX}%`;
+  if (it.m < 0) return "El margen no puede ser negativo";
+  if (!(Number(it.c) > 0)) return "Pon tu costo para calcular el precio";
+  return "";
+}
+function margenCls(it) {
+  if (lineAviso(it)) return "m-bad";
+  const m = it.fijo === "m" && it.m != null ? it.m : margenLinea(it.p, it.c);
+  return m === null ? "" : "m-" + marginClass(m);
+}
+function fitName(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
 function miniTotals() {
   const t = calc(S.draft);
   return `<div class="kv"><span>Subtotal</span><span class="num">${money(t.sub)}</span></div>
     <div class="kv"><span>Tu ganancia</span><span class="num">${money(t.ganancia)} ${marginBadge(t.margen)}</span></div>`;
 }
-const marginBadge = (m) => `<span class="badge ${m >= 45 ? "b-ok" : m >= 30 ? "b-warn" : "b-bad"}">${Math.round(m)}%</span>`;
+const marginClass = (m) => (m >= 45 ? "ok" : m >= 30 ? "warn" : "bad");
+const marginBadge = (m) => `<span class="badge b-${marginClass(m)}">${Math.round(m)}%</span>`;
 
 // Paso 3: condiciones
 function stepCondiciones() {
@@ -882,8 +906,8 @@ const ACT = {
   addFree: () => {
     S.draft.items.push({ productId: null, n: "Producto personalizado", q: 1, p: 0, c: 0 });
     saveDraft(); renderWizard();
-    // Lo que falta es el precio: enfocarlo (teclado decimal) y seleccionarlo para escribir encima.
-    const prices = document.querySelectorAll('.line [data-f="p"]'); const last = prices[prices.length - 1];
+    // Lo primero que ella sabe es su costo: enfocarlo (teclado decimal) y seleccionarlo para escribir encima.
+    const costos = document.querySelectorAll('.line [data-f="c"]'); const last = costos[costos.length - 1];
     if (last) { last.scrollIntoView({ block: "center" }); last.focus(); last.select(); }
   },
   qty: (el) => {
@@ -1136,9 +1160,19 @@ async function sendReport() {
 
 function updateLine(k) {
   const it = S.draft.items[k];
-  const card = document.querySelector(`.line[data-k="${k}"] .lf`);
-  if (card) card.innerHTML = `Ganas ${money(it.q * (it.p - it.c))} · <b class="num">${money(it.q * it.p)}</b>`;
-  const line = document.querySelector(`.line[data-k="${k}"]`); if (line) line.classList.toggle("warn", !(Number(it.p) > 0));
+  const line = document.querySelector(`.line[data-k="${k}"]`);
+  if (line) {
+    line.querySelector(".lf").innerHTML = lineFoot(it);
+    line.classList.toggle("warn", !(Number(it.p) > 0));
+    // Nunca reescribir el campo en el que ella está escribiendo; solo el otro (precio o %).
+    const act = document.activeElement, pe = line.querySelector('[data-f="p"]'), me = line.querySelector('[data-f="m"]');
+    if (pe !== act) pe.value = String(it.p);
+    if (me !== act) me.value = margenTxt(it);
+    me.classList.remove("m-ok", "m-warn", "m-bad");
+    const cls = margenCls(it); if (cls) me.classList.add(cls);
+    const msg = line.querySelector(".lmsg"), aviso = lineAviso(it);
+    msg.textContent = aviso; msg.hidden = !aviso;
+  }
   const mini = document.getElementById("mini"); if (mini) mini.innerHTML = miniTotals();
   refreshNext();
 }
@@ -1193,8 +1227,20 @@ document.addEventListener("input", (e) => {
   if (!S.draft) return;
   const line = t.closest(".line");
   if (line && t.dataset.f) {
-    const k = Number(line.dataset.k), it = S.draft.items[k];
-    it[t.dataset.f] = t.dataset.f === "n" ? t.value : parseMoney(t.value);
+    const k = Number(line.dataset.k), it = S.draft.items[k], f = t.dataset.f;
+    if (f === "n") { it.n = t.value.replace(/\s*\n\s*/g, " "); fitName(t); }
+    else if (f === "p") { it.p = parseMoney(t.value); it.fijo = "p"; delete it.m; }
+    else if (f === "m") {
+      // Campo vacío: el precio manda otra vez. Si no, el % fija el precio (cuando se puede calcular).
+      if (!t.value.trim()) { it.fijo = "p"; delete it.m; }
+      else {
+        it.m = parseMoney(t.value.replace(/%/g, "")); it.fijo = "m";
+        const p = precioDesdeMargen(it.c, it.m); if (p !== null) it.p = p;
+      }
+    } else if (f === "c") {
+      it.c = parseMoney(t.value);
+      if (it.fijo === "m") { const p = precioDesdeMargen(it.c, it.m); if (p !== null) it.p = p; }
+    } else it[f] = parseMoney(t.value);
     saveDraft(); updateLine(k); return;
   }
   if (["anticipoPct", "vigencia", "entrega", "notas"].includes(t.id)) {
@@ -1202,12 +1248,18 @@ document.addEventListener("input", (e) => {
     saveDraft(); updateMini3(); refreshNext();
   }
 });
+// La descripción es un textarea para que envuelva, pero no lleva saltos de línea: Enter pasa al siguiente campo.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !e.target.matches(".line .name")) return;
+  e.preventDefault();
+  const q = e.target.closest(".line").querySelector('[data-f="c"]'); if (q) q.focus();
+});
 document.addEventListener("change", (e) => {
   // Al salir de un precio/costo/cantidad, mostrar el valor ya interpretado (p. ej. "1,500" -> 1500).
   const f = e.target.dataset && e.target.dataset.f;
-  if (S.draft && ["p", "c", "q"].includes(f) && e.target.closest(".line")) {
+  if (S.draft && ["p", "c", "q", "m"].includes(f) && e.target.closest(".line")) {
     const it = S.draft.items[Number(e.target.closest(".line").dataset.k)];
-    if (it) e.target.value = String(it[f]);
+    if (it) e.target.value = f === "m" ? margenTxt(it) : String(it[f]);
   }
   if (e.target.id === "iva" && S.draft) { S.draft.iva = e.target.checked; saveDraft(); updateMini3(); }
   if (e.target.id === "porCorreo" && S.draft) { S.draft.porCorreo = e.target.checked; saveDraft(); }
