@@ -1,14 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.6";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.6";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.6";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.6";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.6";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.6";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.6";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.7";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.7";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.7";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.7";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.7";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.7";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.7";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.7";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.6";
+const APP_VERSION = "0.4.7";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 // Glifos oficiales de Simple Icons (CC0), los mismos de los íconos del PDF (scripts/build-redes-icons.mjs).
@@ -231,7 +232,10 @@ function render() {
     clearTimeout(window.__kkRescue);
     const r = document.getElementById("kk-rescue"); if (r) r.remove();
   }
+  maybeTour(tourOcupado);
 }
+// Nunca interrumpir un envío del Paso 4 con un recorrido.
+const tourOcupado = () => !!S.sending;
 function renderRoute() {
   const r = route();
   closeSheet(); closeScanner();
@@ -338,6 +342,7 @@ function renderWizard() {
     </div>`;
   if (n === 2) document.querySelectorAll(".line .name").forEach(fitName);
   if (n === 4) prepareSeal();
+  maybeTour(tourOcupado);
 }
 function wizActions(n) {
   const back = n > 1 ? `<button class="act ghost" data-act="step" data-to="${n - 1}"><span class="c">${I.back}</span>Atrás</button>` : "";
@@ -752,6 +757,10 @@ function renderSettings() {
           <div class="muted small">Comprueba que una cotización es auténtica.</div>
           <button class="pill soft block" data-act="nav" data-to="/verificar">Verificar el sello de una cotización</button>
         </div>
+        <div class="card"><h3>Novedades</h3>
+          <div class="muted small">Vuelve a ver cómo funciona lo nuevo.</div>
+          ${NOVEDADES.map((n) => `<div class="toggle"><span>${esc(n.titulo)}</span><button class="pill soft" data-act="verTour" data-id="${esc(n.id)}">Ver</button></div>`).join("")}
+        </div>
         <div class="card"><h3>Sesión</h3>
           <div class="muted small">Sesión: ${esc(S.user.email)}</div>
           <button class="pill danger block" data-act="logout">Cerrar sesión</button>
@@ -856,6 +865,11 @@ function quoteText(q) {
 // ---------- Acciones ----------
 const ACT = {
   nav: (el) => go(el.dataset.to),
+  verTour: (el) => {
+    const n = NOVEDADES.find((x) => x.id === el.dataset.id); if (!n) return;
+    go(n.ruta.slice(1));
+    setTimeout(() => startTour(n.id, { forzar: true }), 450);   // después del render de esa pantalla
+  },
   sync: (el) => {
     if (!navigator.onLine) return toast("Sin internet. Se sube solo cuando regrese la conexión.");
     return withLoading(el, async () => {
