@@ -1,12 +1,12 @@
 // Service worker: guarda la app para usarla sin internet. La API nunca se cachea.
-const VERSION = "0.4.6";   // la cambia scripts/bump-version.mjs (igual que version.json, APP_VERSION y los ?v= de index.html y los módulos)
+const VERSION = "0.4.7";   // la cambia scripts/bump-version.mjs (igual que version.json, APP_VERSION y los ?v= de index.html y los módulos)
 const CACHE = "kuukum-cotiza-" + VERSION;
 const V = "?v=" + VERSION;
 // / y no /index.html: Cloudflare redirige /index.html -> / (308) y Safari rechaza una respuesta con redirección para navegar.
 // JS y CSS con ?v=: cada versión tiene sus propias URLs, así nunca se mezcla index.html nuevo con módulos viejos.
 const SHELL = ["/", "/manifest.webmanifest", "/styles.css" + V,
-  ...["app", "calc", "canonical", "catalog", "store", "pdf", "scanner", "diagnostics"].map((m) => `/js/${m}.js${V}`),
-  ...["jspdf.umd.min", "jspdf.plugin.autotable.min", "qrcode", "jsQR"].map((m) => `/vendor/${m}.js${V}`),
+  ...["app", "calc", "canonical", "catalog", "store", "pdf", "scanner", "diagnostics", "novedades"].map((m) => `/js/${m}.js${V}`),
+  ...["jspdf.umd.min", "jspdf.plugin.autotable.min", "qrcode", "jsQR", "driver"].map((m) => `/vendor/${m}.js${V}`), "/vendor/driver.css" + V,
   // Logo e íconos del PDF con ?v= (como los pide pdf.js); el logo también sin versión para los <img> de la app.
   "/img/logo.png", "/img/logo.png" + V,
   ...["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"].map((n) => `/img/redes/${n}.png${V}`),

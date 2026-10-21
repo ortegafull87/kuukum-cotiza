@@ -12,6 +12,7 @@
     "deploy": "wrangler pages deploy public --project-name kuukum-cotiza --branch main"
   },
   "devDependencies": {
+    "driver.js": "^1.10.2",
     "sharp": "^0.35.5",
     "simple-icons": "^16.34.0",
     "wrangler": "^4.40.0"

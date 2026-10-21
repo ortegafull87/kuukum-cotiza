@@ -259,3 +259,25 @@ body:has(#why:not([hidden])) #toast { bottom: calc(176px + env(safe-area-inset-b
 .st-btn { border: 0; background: none; padding: 0; min-height: 44px; display: inline-flex; align-items: center; }
 .linkbtn { border: 0; background: none; color: var(--muted); font-size: 15px; font-weight: 600; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
 .ptr { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; color: var(--muted); font-size: 14px; font-weight: 600; }
+
+/* ---------- Recorridos de novedades (Driver.js) ----------
+   Tamaños en rem/em para respetar la letra grande; la burbuja nunca más ancha que la pantalla menos 32 px. */
+.driver-popover { background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r); font-family: var(--font);
+  padding: 1rem 1rem .875rem; min-width: min(16rem, calc(100vw - 32px)); max-width: min(22rem, calc(100vw - 32px)); box-shadow: 0 8px 28px rgba(0, 30, 40, .28); }
+.driver-popover-title { font: 800 1.125rem/1.3 var(--font); padding-right: 44px; color: var(--fg); }
+.driver-popover-description { font-size: 1rem; line-height: 1.45; color: var(--fg); overflow-wrap: anywhere; }
+.driver-popover-close-btn { width: 44px; height: 44px; font-size: 1.5rem; line-height: 44px; color: var(--muted); top: 2px; right: 2px; border-radius: 50%; }
+.driver-popover-close-btn:hover, .driver-popover-close-btn:focus-visible { color: var(--fg); }
+.driver-popover-footer { margin-top: 1rem; flex-wrap: wrap; gap: .5rem 12px; }
+.driver-popover-progress-text { font-size: .875rem; color: var(--muted); }
+.driver-popover-navigation-btns { flex-wrap: wrap; gap: 8px; }
+.driver-popover-navigation-btns button + button { margin-left: 0; }
+.driver-popover-footer-btn { min-height: var(--tap); padding: .5em 1.1em; border-radius: 999px; font: 700 1rem/1.2 var(--font); text-align: center;
+  border: 1.5px solid var(--line); background: transparent; color: var(--fg); display: inline-flex; align-items: center; justify-content: center; }
+.driver-popover-footer-btn:hover, .driver-popover-footer-btn:focus { background: var(--surface-2); }
+.driver-popover-footer .driver-popover-next-btn { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.driver-popover-footer .driver-popover-next-btn:hover, .driver-popover-footer .driver-popover-next-btn:focus { background: var(--accent); filter: brightness(.95); }
+.driver-popover-arrow-side-top { border-top-color: var(--surface); }
+.driver-popover-arrow-side-bottom { border-bottom-color: var(--surface); }
+.driver-popover-arrow-side-left { border-left-color: var(--surface); }
+.driver-popover-arrow-side-right { border-right-color: var(--surface); }
