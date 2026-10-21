@@ -52,7 +52,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 
 /* ---------- Asistente ---------- */
 .wiz-head { padding: calc(12px + var(--safe-top)) 16px 6px; max-width: 560px; width: 100%; margin: 0 auto; }
-#step { padding-bottom: calc(176px + env(safe-area-inset-bottom)); }   /* deja ver todo arriba del aviso y los botones */
+#step { padding-bottom: calc(var(--actions-h, 176px) + 16px); }   /* --actions-h: altura real de #wizact (app.js), ya con el safe-area */
 .wiz-head .row { display: flex; align-items: center; gap: 12px; }
 .wiz-head h1 { margin: 0; font-size: 20px; font-weight: 800; flex: 1; }
 .wiz-head .step-name { font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -114,10 +114,15 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 
 /* Partidas */
 .line { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
-/* Descripción: textarea que envuelve (2 líneas o más), nunca cortada con elipsis. */
-.line .name { font-weight: 600; font-size: 15px; line-height: 1.35; border: 0; border-bottom: 1.5px solid var(--line); background: none; padding: 8px 0;
-  min-height: 40px; width: 100%; outline: none; resize: none; overflow: hidden; field-sizing: content; white-space: normal; overflow-wrap: anywhere; margin-bottom: 4px; }
-.line .name:focus { border-bottom-color: var(--accent); }
+/* Descripción: campo editable con etiqueta y lápiz; el textarea envuelve y crece, nunca se corta con elipsis. */
+.ldesc { display: grid; gap: 2px; font-size: 15px; color: var(--muted); margin-bottom: 4px; }
+.ldesc-f { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1.5px solid var(--line); }
+.ldesc-f:focus-within { border-bottom-color: var(--accent); }
+.ldesc-f svg { width: 18px; height: 18px; flex: none; margin-top: 12px; color: var(--muted); }
+.ldesc-f:focus-within svg { color: var(--accent); }
+.line .name { font: 500 16px/1.35 var(--font); color: var(--fg); border: 0; background: none; padding: 9px 0; min-height: 42px; width: 100%; outline: none;
+  resize: none; overflow: hidden; field-sizing: content; white-space: normal; overflow-wrap: anywhere; }
+.line .name::placeholder { color: var(--muted); font-weight: 400; }
 /* Una fila por dato: etiqueta a la izquierda, valor a la derecha. Si no cabe (letra grande), el valor baja sin encimarse. */
 .lrow { display: flex; justify-content: space-between; align-items: center; gap: 4px 12px; min-height: var(--tap); flex-wrap: wrap; font-size: 15px; color: var(--muted); }
 .lrow > :last-child { margin-left: auto; }
@@ -170,9 +175,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 
 /* Hoja inferior (configurador de producto) */
 .backdrop { position: fixed; inset: 0; background: rgba(0, 20, 28, .45); z-index: 20; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 92%; z-index: 21; background: var(--surface); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); max-width: 600px; margin: 0 auto; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88%; z-index: 21; background: var(--surface); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); max-width: 600px; margin: 0 auto; }
 .sheet .grab { width: 44px; height: 5px; border-radius: 3px; background: var(--accent); margin: 10px auto 4px; }
-.sheet h2 { margin: 6px 16px 10px; font-size: 20px; text-align: center; }
+/* Agarradera + encabezado: zona para deslizar hacia abajo (app.js); la lista de abajo hace scroll normal. */
+.sheet-top { touch-action: none; padding-bottom: 6px; }
+.sheet-head { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; padding: 0 12px; }
+.sheet h2 { margin: 0; font-size: 20px; text-align: center; }
 .sheet .body { overflow-y: auto; padding: 0 16px 12px; display: grid; gap: 12px; }
 .sheet .foot { padding: 12px 16px; display: flex; gap: 10px; border-top: 1px solid var(--line); }
 .sheet .foot .pill { flex: 1; }
@@ -247,7 +255,7 @@ body.has-update .login { padding-top: calc(84px + var(--safe-top)); }
 /* Registro del servidor */
 .logrow { display: grid; gap: 4px; padding: 12px 2px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 /* Con el motivo de "Siguiente" visible, el toast sube para no taparlo. */
-body:has(#why:not([hidden])) #toast { bottom: calc(176px + env(safe-area-inset-bottom)); }
+body:has(#why:not([hidden])) #toast { bottom: var(--actions-h, calc(176px + env(safe-area-inset-bottom))); }
 /* Ajustes no tiene barra fija abajo: solo el margen del indicador de inicio. */
 .content.settings { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 

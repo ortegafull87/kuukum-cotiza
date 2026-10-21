@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.7";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.7";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.7";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.7";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.7";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.7";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.7";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.7";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.8";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.8";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.8";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.8";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.8";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.8";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.8";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.8";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.7";
+const APP_VERSION = "0.4.8";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 // Glifos oficiales de Simple Icons (CC0), los mismos de los íconos del PDF (scripts/build-redes-icons.mjs).
@@ -37,6 +37,7 @@ const I = {
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.5l2 1.2M17.8 15.3l2 1.2M4.2 16.5l2-1.2M17.8 8.7l2-1.2"/><circle cx="12" cy="12" r="7"/></svg>',
   sync: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>',
   qr: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18v2M18 18h2v2"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
   shield: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'
 };
 
@@ -238,7 +239,7 @@ function render() {
 const tourOcupado = () => !!S.sending;
 function renderRoute() {
   const r = route();
-  closeSheet(); closeScanner();
+  closeSheet(); closeScanner(); stopActionsObs();
   // Ajustes regresa a donde se abrió: al asistente (el borrador sigue donde estaba) o a la lista.
   // (Registro, Verificar y Reportar se abren desde Ajustes: no cambian a dónde regresa.)
   if (r.startsWith("/ajustes") && S.prevRoute) {
@@ -340,10 +341,21 @@ function renderWizard() {
       <main class="content" id="step">${[0, stepCliente, stepProductos, stepCondiciones, stepVerificar][n]()}</main>
       <div class="actions" id="wizact"><div class="why" id="why" role="status" aria-live="polite" ${n < 4 && stepIssue(n) ? "" : "hidden"}>${n < 4 ? esc(stepIssue(n)) : ""}</div>${wizActions(n)}</div>
     </div>`;
+  observeActions();
   if (n === 2) document.querySelectorAll(".line .name").forEach(fitName);
   if (n === 4) prepareSeal();
   maybeTour(tourOcupado);
 }
+// La barra de abajo crece con la letra grande: su altura real se escribe en --actions-h para que #step deje ese espacio.
+let actionsObs = null;
+function observeActions() {
+  stopActionsObs();
+  const el = document.getElementById("wizact");
+  if (!el || !window.ResizeObserver) return;
+  actionsObs = new ResizeObserver(() => document.documentElement.style.setProperty("--actions-h", el.offsetHeight + "px"));
+  actionsObs.observe(el);
+}
+function stopActionsObs() { if (actionsObs) { actionsObs.disconnect(); actionsObs = null; } }
 function wizActions(n) {
   const back = n > 1 ? `<button class="act ghost" data-act="step" data-to="${n - 1}"><span class="c">${I.back}</span>Atrás</button>` : "";
   const discard = `<button class="act ghost" data-act="discard"><span class="c">${I.x}</span>Descartar</button>`;
@@ -416,7 +428,8 @@ function lineCard(it, k) {
   const aviso = lineAviso(it);
   return `
     <div class="line ${Number(it.p) > 0 ? "" : "warn"}" data-k="${k}">
-      <textarea class="name" data-f="n" rows="1" enterkeyhint="next" aria-label="Descripción">${esc(it.n)}</textarea>
+      <label class="ldesc"><span>Descripción</span>
+        <span class="ldesc-f"><textarea class="name" data-f="n" rows="1" enterkeyhint="next" placeholder="¿Qué producto es? Ej. Termo 500 ml grabado">${esc(it.n)}</textarea>${I.pencil}</span></label>
       <div class="lrow"><span>Cantidad</span>
         <div class="stepper">
           <button data-act="qty" data-d="-1" aria-label="Menos">${I.minus}</button>
@@ -557,8 +570,10 @@ function drawSheet(keepFocus) {
   $sheet.innerHTML = `
     <div class="backdrop" data-act="closeSheet"></div>
     <div class="sheet" role="dialog" aria-label="Configura un producto">
-      <div class="grab"></div>
-      <h2>¡Okie Dokie!</h2>
+      <div class="sheet-top">
+        <div class="grab"></div>
+        <div class="sheet-head"><span></span><h2>¡Okie Dokie!</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div>
+      </div>
       <div class="body">
         <label class="search">${I.search}<input id="sq" placeholder="Buscar en el catálogo…" value="${esc(SH.text)}" autocomplete="off"></label>
         ${FACETAS.map(([k, label]) => {
@@ -918,11 +933,11 @@ const ACT = {
     saveDraft(); closeSheet(); renderWizard(); toast(`Agregado: ${SH.q} × ${p.n.split(".")[0]}`);
   },
   addFree: () => {
-    S.draft.items.push({ productId: null, n: "Producto personalizado", q: 1, p: 0, c: 0 });
+    S.draft.items.push({ productId: null, n: "", q: 1, p: 0, c: 0 });
     saveDraft(); renderWizard();
-    // Lo primero que ella sabe es su costo: enfocarlo (teclado decimal) y seleccionarlo para escribir encima.
-    const costos = document.querySelectorAll('.line [data-f="c"]'); const last = costos[costos.length - 1];
-    if (last) { last.scrollIntoView({ block: "center" }); last.focus(); last.select(); }
+    // Lo primero es decir qué producto es; Enter (siguiente) pasa a Tu costo.
+    const nombres = document.querySelectorAll(".line .name"); const last = nombres[nombres.length - 1];
+    if (last) { last.scrollIntoView({ block: "center" }); last.focus(); }
   },
   qty: (el) => {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
@@ -1191,6 +1206,28 @@ function updateLine(k) {
   refreshNext();
 }
 function updateMini3() { const m = document.getElementById("mini3"); if (m) m.innerHTML = totalsBlock(S.draft); }
+
+// ---------- Deslizar el configurador hacia abajo para cerrarlo ----------
+const SD = { y0: null, dy: 0 };
+document.addEventListener("touchstart", (e) => {
+  if (e.touches.length !== 1 || !e.target.closest(".sheet-top") || e.target.closest("button")) return;
+  SD.y0 = e.touches[0].clientY; SD.dy = 0;
+  const sh = $sheet.querySelector(".sheet"); if (sh) sh.style.transition = "none";
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  if (SD.y0 === null) return;
+  SD.dy = Math.max(0, e.touches[0].clientY - SD.y0);
+  const sh = $sheet.querySelector(".sheet"); if (sh) sh.style.transform = `translateY(${SD.dy}px)`;
+}, { passive: true });
+function endSheetDrag() {
+  if (SD.y0 === null) return;
+  SD.y0 = null;
+  const sh = $sheet.querySelector(".sheet"); if (!sh) return;
+  if (SD.dy > 80) return closeSheet();
+  sh.style.transition = "transform .2s ease"; sh.style.transform = "";   // no llegó: regresa
+}
+document.addEventListener("touchend", endSheetDrag);
+document.addEventListener("touchcancel", endSheetDrag);
 
 // ---------- Jalar la lista para refrescar ----------
 // Sube lo pendiente y consulta el estado en Odoo sin esperar los 5 min.
