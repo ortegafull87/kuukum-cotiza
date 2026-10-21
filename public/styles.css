@@ -103,7 +103,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .canal { flex: none; width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--fg); display: grid; place-items: center; padding: 0; font-size: 14px; font-weight: 600; }
 .canal svg { width: 26px; height: 26px; fill: currentColor; stroke: none; }
 .canal.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
-.pill { height: var(--tap); padding: 0 20px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 16px; line-height: 1; }
+.pill { min-height: var(--tap); padding: 8px 20px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 16px; line-height: 1; }
 .pill.soft { background: var(--accent-soft); color: var(--fg); }
 .pill.ghost { background: transparent; border: 1.5px solid var(--line); color: var(--fg); }
 .pill.danger { background: transparent; border: 1.5px solid var(--error); color: var(--error); }
@@ -113,17 +113,30 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .empty { text-align: center; color: var(--muted); padding: 28px 12px; font-size: 15px; }
 
 /* Partidas */
-.line { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 10px; }
-.line .name { font-weight: 600; font-size: 15px; }
-.line.warn { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
-.line.warn [data-f="p"] { border-bottom-color: var(--warn); }
-.line .row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 12px; align-items: end; }
-.line .foot { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+.line { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+/* Descripción: textarea que envuelve (2 líneas o más), nunca cortada con elipsis. */
+.line .name { font-weight: 600; font-size: 15px; line-height: 1.35; border: 0; border-bottom: 1.5px solid var(--line); background: none; padding: 8px 0;
+  min-height: 40px; width: 100%; outline: none; resize: none; overflow: hidden; field-sizing: content; white-space: normal; overflow-wrap: anywhere; margin-bottom: 4px; }
+.line .name:focus { border-bottom-color: var(--accent); }
+/* Una fila por dato: etiqueta a la izquierda, valor a la derecha. Si no cabe (letra grande), el valor baja sin encimarse. */
+.lrow { display: flex; justify-content: space-between; align-items: center; gap: 4px 12px; min-height: var(--tap); flex-wrap: wrap; font-size: 15px; color: var(--muted); }
+.lrow > :last-child { margin-left: auto; }
+.lv { display: flex; align-items: center; gap: 4px; flex: 0 1 9em; min-width: 6em; color: var(--fg); font-family: var(--mono); }
+.lv input { flex: 1 1 auto; min-width: 0; width: 100%; text-align: right; font: 16px var(--mono); font-variant-numeric: tabular-nums;
+  border: 0; border-bottom: 1.5px solid var(--line); background: transparent; padding: 8px 0; min-height: 40px; outline: none; border-radius: 0; }
+.lv input:focus { border-bottom-color: var(--accent); }
+.lv input.m-ok { color: var(--ok); border-bottom-color: var(--ok); }
+.lv input.m-warn { color: var(--warn); border-bottom-color: var(--warn); }
+.lv input.m-bad { color: var(--error); border-bottom-color: var(--error); }
+.lmsg { font-size: 13px; color: var(--error); text-align: right; }
+.line.warn [data-f="p"] { border-bottom-color: var(--warn); box-shadow: 0 1.5px 0 var(--warn); }
+.line .foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; font-size: 13px; color: var(--muted);
+  border-top: 1.5px solid var(--line); padding-top: 10px; margin-top: 6px; }
 .line .foot b { color: var(--fg); font-size: 16px; }
 .stepper { display: flex; align-items: center; gap: 4px; }
 .stepper button { width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid var(--line); background: none; display: grid; place-items: center; }
 .stepper button svg { width: 18px; height: 18px; }
-.stepper input { width: 52px; text-align: center; border: 0; border-bottom: 1.5px solid var(--line); background: transparent; height: 40px; font: 700 17px var(--mono); outline: none; }
+.stepper input { width: 5ch; min-width: 52px; text-align: center; border: 0; border-bottom: 1.5px solid var(--line); background: transparent; height: 40px; font: 700 17px var(--mono); outline: none; }
 .link-del { border: 0; background: none; color: var(--error); font-size: 14px; font-weight: 600; min-height: 36px; padding: 0; }
 
 .toggle { display: flex; align-items: center; justify-content: space-between; min-height: var(--tap); font-size: 16px; }
@@ -133,7 +146,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .toggle input:checked::after { left: 23px; }
 
 /* Resumen / totales */
-.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; }
+.kv { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; font-size: 15px; }
+.kv > :last-child { margin-left: auto; }
 .kv.big { font-size: 20px; font-weight: 800; }
 .kv .num { white-space: nowrap; }
 .profit { border-radius: var(--r); padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--primary); color: #fff; }

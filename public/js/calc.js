@@ -1,6 +1,16 @@
 // Cálculos de la cotización. Compartido por la app y por la API (functions).
 export const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
+export const MARGEN_MAX = 95;
+// Margen de una línea en %, o null si no hay precio. Puede ser negativo (vender bajo costo).
+export function margenLinea(p, c) { p = Number(p) || 0; c = Number(c) || 0; return p > 0 ? ((p - c) / p) * 100 : null; }
+// Precio unitario para un margen dado, redondeado a centavos. null si no se puede (sin costo o margen fuera de rango).
+export function precioDesdeMargen(c, m) {
+  c = Number(c) || 0; m = Number(m);
+  if (!(c > 0) || !Number.isFinite(m) || m < 0 || m > MARGEN_MAX) return null;
+  return r2(c / (1 - m / 100));
+}
+
 export function calc(q) {
   const items = q.items || [];
   const sub = r2(items.reduce((a, i) => a + i.q * i.p, 0));
