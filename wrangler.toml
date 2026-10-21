@@ -21,3 +21,18 @@ id = "b37bc3ef3eda4c3baedd14643aecdd50"
 #   npx wrangler pages secret put ODOO_API_KEY
 #   npx wrangler pages secret put SESSION_SECRET
 #   npx wrangler pages secret put SEAL_SECRET
+
+# ---------- Preview (rama staging y demás previews) ----------
+# En Pages, vars y kv_namespaces no se heredan: aquí va el bloque completo.
+# Secrets de Preview (ODOO_API_KEY, SESSION_SECRET, SEAL_SECRET) se ponen en el dashboard, ambiente Preview.
+[env.preview.vars]
+GOOGLE_CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com"
+ALLOWED_EMAILS = "loidaegr@gmail.com,ortegafull87@gmail.com,kuukum.mx@gmail.com"
+ODOO_URL = "https://kuukum.odoo.com"
+# Los reportes de prueba no llegan a hola@.
+REPORTES_EMAIL = "ortegafull87@gmail.com"
+ODOO_DB = ""
+
+[[env.preview.kv_namespaces]]
+binding = "KK"
+id = "9e35be5a71c14d96b9b45d53ae36cad0"
