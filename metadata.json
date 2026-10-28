@@ -1,0 +1,8 @@
+{
+  "name": "Kuukum Cotiza",
+  "description": "Aplicación móvil y web de cotizaciones Kuukum conectada con Odoo",
+  "prompt": "Kuukum Cotiza",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Antes de cada commit: la versión debe coincidir en public/version.json, APP_VERSION de app.js, VERSION de sw.js
+# y los ?v= de index.html y de los imports. Se activa con `npm install` (script "prepare") o con:
+#   git config core.hooksPath .githooks
+node scripts/check-version.mjs || {
+  echo "Commit cancelado: alinea la versión con  node scripts/bump-version.mjs X.Y.Z"
+  exit 1
+}

@@ -1,0 +1,74 @@
+{
+  "store": {
+    "errlog:8206856815423:cc00dd0e7bdc4277": "{\"ts\":\"2026-10-27T23:19:44.576Z\",\"requestId\":\"cc00dd0e7bdc4277\",\"method\":\"GET\",\"ruta\":\"/api/catalogo\",\"status\":502,\"ms\":258,\"usuario\":\"kuukum.mx@gmail.com\",\"odoo\":[{\"modelo\":\"product.product\",\"metodo\":\"search_read\",\"ms\":256,\"ok\":false,\"error\":\"fetch failed\"}],\"error\":\"fetch failed\",\"mensaje\":\"fetch failed\"}",
+    "errlog:8206856815158:d4aa4323e119459c": "{\"ts\":\"2026-10-27T23:19:44.841Z\",\"requestId\":\"d4aa4323e119459c\",\"method\":\"GET\",\"ruta\":\"/api/clientes\",\"status\":502,\"ms\":13,\"usuario\":\"kuukum.mx@gmail.com\",\"odoo\":[{\"modelo\":\"res.partner\",\"metodo\":\"search_read\",\"ms\":11,\"ok\":false,\"error\":\"fetch failed\"}],\"error\":\"fetch failed\",\"mensaje\":\"fetch failed\"}",
+    "errlog:8206856365075:2a1abfb15d1547c9": "{\"ts\":\"2026-10-27T23:27:14.924Z\",\"requestId\":\"2a1abfb15d1547c9\",\"method\":\"POST\",\"ruta\":\"/api/sync\",\"status\":502,\"ms\":25,\"usuario\":\"kuukum.mx@gmail.com\",\"folio\":\"AP-K0001\",\"odoo\":[{\"modelo\":\"utm.source\",\"metodo\":\"search\",\"ms\":21,\"ok\":false,\"error\":\"fetch failed\"}],\"error\":\"fetch failed\",\"mensaje\":\"fetch failed\"}",
+    "errlog:8206856331534:ed6cdc731e124212": "{\"ts\":\"2026-10-27T23:27:48.465Z\",\"requestId\":\"ed6cdc731e124212\",\"method\":\"POST\",\"ruta\":\"/api/sync\",\"status\":502,\"ms\":11,\"usuario\":\"kuukum.mx@gmail.com\",\"folio\":\"AP-K0001\",\"odoo\":[{\"modelo\":\"utm.source\",\"metodo\":\"search\",\"ms\":8,\"ok\":false,\"error\":\"fetch failed\"}],\"error\":\"fetch failed\",\"mensaje\":\"fetch failed\"}",
+    "errlog:8206856323026:c979934963844acf": "{\"ts\":\"2026-10-27T23:27:56.973Z\",\"requestId\":\"c979934963844acf\",\"method\":\"POST\",\"ruta\":\"/api/sync\",\"status\":502,\"ms\":11,\"usuario\":\"kuukum.mx@gmail.com\",\"folio\":\"AP-K0001\",\"odoo\":[{\"modelo\":\"utm.source\",\"metodo\":\"search\",\"ms\":10,\"ok\":false,\"error\":\"fetch failed\"}],\"error\":\"fetch failed\",\"mensaje\":\"fetch failed\"}",
+    "errlog:8206856276627:33569482073b4a67": "{\"ts\":\"2026-10-27T23:28:43.372Z\",\"requestId\":\"33569482073b4a67\",\"method\":\"POST\",\"ruta\":\"/api/sync\",\"status\":502,\"ms\":30,\"usuario\":\"kuukum.mx@gmail.com\",\"folio\":\"AP-K0001\",\"odoo\":[{\"modelo\":\"utm.source\",\"metodo\":\"search\",\"ms\":25,\"ok\":false,\"error\":\"fetch failed\"}],\"error\":\"fetch failed\",\"mensaje\":\"fetch failed\"}",
+    "odoo:src:Google": "14",
+    "sync:0c3ea168-3405-48e3-a4e5-4e25d72c5c54": "{\"id\":102,\"name\":\"S00102\",\"partnerId\":10,\"enviada\":false,\"rev\":1}",
+    "seal:AP-K0001": "{\"sello\":\"SRZR2Y0J5ZX6DTKE\",\"email\":\"kuukum.mx@gmail.com\",\"odoo\":\"S00102\",\"rev\":1,\"historial\":[],\"snapshot\":{\"fecha\":\"2026-10-27T23:29:56.375Z\",\"cliente\":\"Adriana Aguirre\",\"tel\":\"+52 442 333 3382\",\"items\":[{\"n\":\"Exhibidor de agendas\",\"q\":1,\"p\":135.63}],\"desc\":0,\"iva\":true,\"anticipoPct\":60,\"total\":157.33,\"anticipo\":94.4}}",
+    "folio:kuukum.mx@gmail.com": "1"
+  },
+  "metadata": {
+    "errlog:8206856815423:cc00dd0e7bdc4277": {
+      "ts": "2026-10-27T23:19:44.576Z",
+      "requestId": "cc00dd0e7bdc4277",
+      "method": "GET",
+      "ruta": "/api/catalogo",
+      "status": 502,
+      "usuario": "kuukum.mx@gmail.com",
+      "mensaje": "fetch failed"
+    },
+    "errlog:8206856815158:d4aa4323e119459c": {
+      "ts": "2026-10-27T23:19:44.841Z",
+      "requestId": "d4aa4323e119459c",
+      "method": "GET",
+      "ruta": "/api/clientes",
+      "status": 502,
+      "usuario": "kuukum.mx@gmail.com",
+      "mensaje": "fetch failed"
+    },
+    "errlog:8206856365075:2a1abfb15d1547c9": {
+      "ts": "2026-10-27T23:27:14.924Z",
+      "requestId": "2a1abfb15d1547c9",
+      "method": "POST",
+      "ruta": "/api/sync",
+      "status": 502,
+      "usuario": "kuukum.mx@gmail.com",
+      "mensaje": "fetch failed",
+      "folio": "AP-K0001"
+    },
+    "errlog:8206856331534:ed6cdc731e124212": {
+      "ts": "2026-10-27T23:27:48.465Z",
+      "requestId": "ed6cdc731e124212",
+      "method": "POST",
+      "ruta": "/api/sync",
+      "status": 502,
+      "usuario": "kuukum.mx@gmail.com",
+      "mensaje": "fetch failed",
+      "folio": "AP-K0001"
+    },
+    "errlog:8206856323026:c979934963844acf": {
+      "ts": "2026-10-27T23:27:56.973Z",
+      "requestId": "c979934963844acf",
+      "method": "POST",
+      "ruta": "/api/sync",
+      "status": 502,
+      "usuario": "kuukum.mx@gmail.com",
+      "mensaje": "fetch failed",
+      "folio": "AP-K0001"
+    },
+    "errlog:8206856276627:33569482073b4a67": {
+      "ts": "2026-10-27T23:28:43.372Z",
+      "requestId": "33569482073b4a67",
+      "method": "POST",
+      "ruta": "/api/sync",
+      "status": 502,
+      "usuario": "kuukum.mx@gmail.com",
+      "mensaje": "fetch failed",
+      "folio": "AP-K0001"
+    }
+  }
+}

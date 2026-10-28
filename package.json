@@ -1,0 +1,25 @@
+{
+  "name": "kuukum-cotiza",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "node -e \"console.log('Build completed')\"",
+    "start": "node server.js",
+    "lint": "node --check server.js lib/core.js lib/google.js lib/log.js lib/odoo.js lib/mock-odoo.js",
+    "mock-odoo": "node scripts/mock-odoo.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "predeploy": "node scripts/check-version.mjs",
+    "deploy": "wrangler pages deploy public --project-name kuukum-cotiza --branch main"
+  },
+  "devDependencies": {
+    "driver.js": "^1.10.2",
+    "sharp": "^0.35.5",
+    "simple-icons": "^16.34.0",
+    "wrangler": "^4.40.0"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  }
+}
