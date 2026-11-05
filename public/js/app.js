@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.8";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.8";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.8";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.8";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.8";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.8";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.8";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.8";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.10";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.10";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.10";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.10";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.10";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.10";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.10";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.10";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.8";
+const APP_VERSION = "0.4.10";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 // Glifos oficiales de Simple Icons (CC0), los mismos de los íconos del PDF (scripts/build-redes-icons.mjs).
@@ -565,7 +565,7 @@ function drawSheet(keepFocus) {
   const pool = filter(S.catalog, SH.sel, SH.text);
   const vals = facetValues(pool);
   const results = pool.slice(0, 60);
-  if (!SH.pick && pool.length === 1) SH.pick = pool[0].id;   // si solo queda uno, ya está elegido
+  if (!SH.pick && pool.length === 1) SH.pick = pool[0].k;   // si solo queda uno, ya está elegido
   const scroll = $sheet.querySelector(".body")?.scrollTop || 0;
   $sheet.innerHTML = `
     <div class="backdrop" data-act="closeSheet"></div>
@@ -586,7 +586,7 @@ function drawSheet(keepFocus) {
         <div class="label">${pool.length} producto${pool.length === 1 ? "" : "s"}${SH.pick ? "" : " · toca uno para elegirlo"}</div>
         <div style="display:grid;gap:8px">${results.map((p) => {
           const m = p.p > 0 ? Math.round(((p.p - p.c) / p.p) * 100) : 0;
-          return `<button class="res ${SH.pick === p.id ? "on" : ""}" data-act="pickProd" data-id="${p.id}"><span class="grow">${esc(p.n)}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
+          return `<button class="res ${SH.pick === p.k ? "on" : ""}" data-act="pickProd" data-id="${esc(p.k)}"><span class="grow">${esc(p.n)}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
         }).join("") || `<div class="empty">Nada con esos filtros. Quita un chip o usa "Producto libre".</div>`}</div>
       </div>
       <div class="foot">
@@ -923,13 +923,13 @@ const ACT = {
   openSheet: () => { if (!S.catalog.length) return toast("Catálogo vacío. Conéctate para descargarlo, o usa Producto libre.", 3500); openSheet(); },
   closeSheet: () => closeSheet(),
   facet: (el) => { const { k, v } = el.dataset; SH.sel[k] = SH.sel[k] === v ? undefined : v; SH.pick = null; drawSheet(); },
-  pickProd: (el) => { SH.pick = Number(el.dataset.id); drawSheet(); },
+  pickProd: (el) => { SH.pick = el.dataset.id; drawSheet(); },
   sheetQty: (el) => { SH.q = Math.max(1, (Number(document.getElementById("sheetq").value) || 1) + Number(el.dataset.d)); document.getElementById("sheetq").value = SH.q; },
   addPicked: () => {
-    const p = S.catalog.find((x) => x.id === SH.pick); if (!p) return;
+    const p = S.catalog.find((x) => x.k === SH.pick); if (!p) return;
     SH.q = Math.max(1, Number(document.getElementById("sheetq").value) || 1);
-    const ex = S.draft.items.find((i) => i.productId === p.id);
-    if (ex) ex.q += SH.q; else S.draft.items.push({ productId: p.id, n: p.n, q: SH.q, p: p.p, c: p.c });
+    const ex = S.draft.items.find((i) => i.productId === p.id && (i.ptav || null) === (p.ptav || null));
+    if (ex) ex.q += SH.q; else S.draft.items.push({ productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c });
     saveDraft(); closeSheet(); renderWizard(); toast(`Agregado: ${SH.q} × ${p.n.split(".")[0]}`);
   },
   addFree: () => {

@@ -57,6 +57,7 @@ export function enrich(products) {
     if (tecnica.includes("DTF UV")) tecnica = tecnica.filter((x) => x !== "DTF");
     return {
       ...p,
+      k: p.k || String(p.id),   // llave única: un producto puede venir varias veces (sin técnica y con cada técnica)
       _q: n,
       tags: {
         prenda: pick(PRENDAS, n).slice(0, 1),

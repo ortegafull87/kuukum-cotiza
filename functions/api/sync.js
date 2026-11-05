@@ -123,7 +123,9 @@ async function orderVals(env, call, config, q, knownPartner = null) {
     price_unit: Number(i.p),
     discount: Number(q.desc) || 0,
     tax_ids: [[6, 0, taxes]],
-    purchase_price: Number(i.c) || 0
+    purchase_price: Number(i.c) || 0,
+    // Técnica de personalización elegida en el catálogo (p. ej. Láser): queda registrada en la línea de Odoo.
+    ...(i.ptav ? { product_no_variant_attribute_value_ids: [[6, 0, [Number(i.ptav)]]] } : {})
   }]);
 
   const folio = folioVisible(q.folio, q.rev);
