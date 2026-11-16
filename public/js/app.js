@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.12";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.12";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.12";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.12";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.12";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.12";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.12";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.12";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.13";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.13";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.13";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.13";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.13";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.13";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.13";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.13";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.12";
+const APP_VERSION = "0.4.13";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -33,6 +33,7 @@ const PANTALLAS = ["Inicio de sesión", "Paso 1 Cliente", "Paso 2 Productos", "P
 const folioDe = (q) => folioVisible(q.folio, q.rev);
 
 const I = {
+  info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
   next: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
@@ -436,6 +437,7 @@ function lineCard(it, k) {
   const aviso = lineAviso(it);
   return `
     <div class="line ${Number(it.p) > 0 || it.arte ? "" : "warn"}" data-k="${k}">
+      ${it.productId && !it.arte ? `<button class="icon-btn info-btn" data-act="info" aria-label="Foto y precios por cantidad">${I.info}</button>` : ""}
       <label class="ldesc"><span>Descripción</span>
         <span class="ldesc-f"><textarea class="name" data-f="n" rows="1" enterkeyhint="next" placeholder="¿Qué producto es? Ej. Termo 500 ml grabado">${esc(it.n)}</textarea>${I.pencil}</span></label>
       <div class="lrow"><span>Cantidad</span>
@@ -896,6 +898,35 @@ function quoteText(q) {
     `\n\nSello: ${formatSeal(q.sello)}`;
 }
 
+// ---------- Ficha rápida de la línea (i): foto principal de Odoo y precio por cantidad ----------
+function openInfo(k) {
+  const it = S.draft.items[k]; if (!it) return;
+  const cat = S.catalog.find((x) => x.id === it.productId && (x.ptav || null) === (it.ptav || null)) || {};
+  const t = it.t || cat.t || null;
+  const iva = (v) => money(r2(v * 1.16));
+  let actual = 0; if (t) t.forEach(([d], i) => { if (Number(it.q) >= d) actual = i; });
+  const filas = t ? t.map(([d, p], i) => {
+    const hasta = i < t.length - 1 ? `–${(t[i + 1][0] - 1).toLocaleString("es-MX")}` : "+";
+    return `<tr class="${i === actual ? "on" : ""}"><td>${d.toLocaleString("es-MX")}${hasta} pzs</td><td class="num">${money(p)}</td><td class="num">${iva(p)}</td></tr>`;
+  }).join("") : "";
+  $sheet.innerHTML = `
+    <div class="backdrop" data-act="closeSheet"></div>
+    <div class="sheet" role="dialog" aria-label="Ficha del producto">
+      <div class="sheet-top"><div class="grab"></div>
+        <div class="sheet-head"><span></span><h2>Ficha</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div></div>
+      <div class="body">
+        <div class="info-foto"><img src="/api/imagen?id=${Number(it.productId)}" alt="${esc(it.n)}"
+          onerror="this.parentNode.innerHTML='<span class=&quot;muted small&quot;>Sin foto en Odoo o sin internet</span>'"></div>
+        <p><b>${esc(cat.n || it.n)}</b></p>
+        ${t ? `
+          <div class="label">Precio por cantidad (con logo)</div>
+          <table class="info-tabla"><thead><tr><th>Piezas</th><th>Sin IVA</th><th>Con IVA</th></tr></thead><tbody>${filas}</tbody></table>
+          <p class="small muted">Resaltado: el precio para ${Number(it.q).toLocaleString("es-MX")} pzs. Mínimo programado: ${t[0][0].toLocaleString("es-MX")} pzs.</p>`
+        : `<p class="small muted">Este producto no tiene precio por cantidad en Odoo.<br>Precio: ${money(cat.p ?? it.p)} sin IVA · ${iva(cat.p ?? it.p)} con IVA.</p>`}
+      </div>
+    </div>`;
+}
+
 // ---------- Cargo de arte y preparación ----------
 // Servicio de Odoo (KU-SRV-ARTE). Al pasar de Productos a Condiciones se pregunta una vez por cotización si se cobra;
 // si no, se agrega en $0 para que quede registrado que se decidió no cobrarlo.
@@ -1010,6 +1041,7 @@ const ACT = {
     el.closest(".line").querySelector('[data-f="q"]').value = it.q;
     updateLine(k); saveDraft();
   },
+  info: (el) => openInfo(Number(el.closest(".line").dataset.k)),
   resetTramo: (el) => {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
     delete it.fijo; delete it.m; aplicaTramo(it); saveDraft(); renderWizard();
