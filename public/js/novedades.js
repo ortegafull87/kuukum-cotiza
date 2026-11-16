@@ -1,11 +1,21 @@
 // Recorridos guiados de novedades (Driver.js, en public/vendor/driver.js). La primera vez que ella llega a la pantalla
 // donde ocurrió un cambio, 1–3 burbujas lo explican; si ya lo vio o lo saltó, no vuelve a salir.
 // Los vistos viven en localStorage (kk_tours) y nunca se borran al reparar ni al actualizar.
-import { ls, logError } from "./store.js?v=0.4.19";
+import { ls, logError } from "./store.js?v=0.4.20";
 
 // Una entrada por cambio visible. El id nunca se reutiliza ni se cambia (es lo que se guarda como "visto").
 // Se conservan las de las últimas ~3 versiones; las más viejas se borran del archivo.
 export const NOVEDADES = [
+  {
+    id: "0.4.20-buscador-sku",
+    titulo: "Buscar por SKU",
+    ruta: "#/nueva",
+    // Los recorridos no salen con la hoja abierta: se apunta al botón que abre el buscador.
+    pasos: [
+      { el: "button.dashed[data-act=openSheet]", titulo: "Buscar por SKU",
+        texto: "Ahora puedes pegar en el buscador el SKU que te llega por WhatsApp, el código del proveedor, el nombre o la categoría. Mientras escribes, los filtros se esconden para que veas más resultados; puedes cambiarlo en Ajustes." }
+    ]
+  },
   {
     id: "0.4.14-ficha-rangos",
     titulo: "Ficha y precio por cantidad",

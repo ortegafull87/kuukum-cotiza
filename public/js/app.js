@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.19";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.19";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.19";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.19";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.19";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.19";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.19";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.19";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.20";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.20";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.20";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.20";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.20";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.20";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.20";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.20";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.19";
+const APP_VERSION = "0.4.20";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
