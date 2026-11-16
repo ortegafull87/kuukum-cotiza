@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX } from "./calc.js?v=0.4.10";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.10";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.10";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.10";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.10";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.10";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.10";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.10";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.11";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.11";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.11";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.11";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.11";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.11";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.11";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.11";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.10";
+const APP_VERSION = "0.4.11";
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"], ["OT", "Otro"]];
 const canalName = (c) => (CANALES.find(([k]) => k === c) || [, "—"])[1];
 // Glifos oficiales de Simple Icons (CC0), los mismos de los íconos del PDF (scripts/build-redes-icons.mjs).
@@ -319,7 +319,7 @@ function stepIssue(n, d = S.draft) {
       const nom = corto(i.n);
       if (!nom) return `Escribe la descripción de la partida ${k + 1}`;
       if (!(Number(i.q) > 0)) return `La cantidad de «${nom}» debe ser mayor a 0`;
-      if (!(Number(i.p) > 0)) return `Falta el precio de «${nom}»`;
+      if (!(Number(i.p) > 0) && !i.arte) return `Falta el precio de «${nom}»`;
     }
   }
   if (n === 3 && !(Number(d.anticipoPct) >= 0 && Number(d.anticipoPct) <= 100)) return "El anticipo debe estar entre 0 y 100%";
@@ -427,7 +427,7 @@ function stepProductos() {
 function lineCard(it, k) {
   const aviso = lineAviso(it);
   return `
-    <div class="line ${Number(it.p) > 0 ? "" : "warn"}" data-k="${k}">
+    <div class="line ${Number(it.p) > 0 || it.arte ? "" : "warn"}" data-k="${k}">
       <label class="ldesc"><span>Descripción</span>
         <span class="ldesc-f"><textarea class="name" data-f="n" rows="1" enterkeyhint="next" placeholder="¿Qué producto es? Ej. Termo 500 ml grabado">${esc(it.n)}</textarea>${I.pencil}</span></label>
       <div class="lrow"><span>Cantidad</span>
@@ -440,6 +440,7 @@ function lineCard(it, k) {
       <label class="lrow"><span>Ganancia</span><span class="lv"><input class="num ${margenCls(it)}" data-f="m" inputmode="decimal" enterkeyhint="next" placeholder="—" value="${margenTxt(it)}">%</span></label>
       <div class="lmsg" role="status" ${aviso ? "" : "hidden"}>${aviso}</div>
       <label class="lrow"><span>Precio unit.</span><span class="lv">$<input class="num" data-f="p" inputmode="decimal" enterkeyhint="next" value="${it.p}"></span></label>
+      ${it.t ? `<div class="tramo small muted">${tramoHtml(it)}</div>` : ""}
       <div class="foot lf">${lineFoot(it)}</div>
       <div><button class="link-del" data-act="delLine">Quitar</button></div>
     </div>`;
@@ -451,7 +452,17 @@ function margenTxt(it) {
   const m = margenLinea(it.p, it.c);
   return m === null ? "" : m.toFixed(1);
 }
+// Precio por tramo: "Tramo 50–999 pzs", o si ella fijó el precio, el aviso con el botón para regresar al tramo.
+function tramoHtml(it) {
+  if (it.fijo) return `Precio manual · <button class="link-del" data-act="resetTramo">volver al tramo (${esc(tramoTexto(it.t, it.q))})</button>`;
+  return `Tramo ${esc(tramoTexto(it.t, it.q))} · precio de Odoo con logo`;
+}
+// Si la línea tiene tramos y ella no fijó precio ni %, el precio sale del tramo según las piezas.
+function aplicaTramo(it) {
+  if (it.t && !it.fijo) { const p = precioTramo(it.t, it.q); if (p !== null) it.p = p; }
+}
 function lineAviso(it) {
+  if (it.min && Number(it.q) < it.min) return `El mínimo es ${it.min} piezas`;
   if (it.fijo !== "m" || it.m == null) return "";
   if (it.m > MARGEN_MAX) return `El margen máximo es ${MARGEN_MAX}%`;
   if (it.m < 0) return "El margen no puede ser negativo";
@@ -877,6 +888,38 @@ function quoteText(q) {
     `\n\nSello: ${formatSeal(q.sello)}`;
 }
 
+// ---------- Cargo de arte y preparación ----------
+// Servicio de Odoo (KU-SRV-ARTE). Al pasar de Productos a Condiciones se pregunta una vez por cotización si se cobra;
+// si no, se agrega en $0 para que quede registrado que se decidió no cobrarlo.
+const ARTE_CODE = "KU-SRV-ARTE";
+const arteProd = () => S.catalog.find((x) => x.code === ARTE_CODE);
+function openArte() {
+  const a = arteProd();
+  $sheet.innerHTML = `
+    <div class="backdrop" data-act="closeSheet"></div>
+    <div class="sheet" role="dialog" aria-label="Cargo por arte y preparación">
+      <div class="sheet-top"><div class="grab"></div>
+        <div class="sheet-head"><span></span><h2>Arte y preparación</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div></div>
+      <div class="body">
+        <p>¿Quieres agregar un cargo por <b>Arte y preparación</b>?</p>
+        <p class="small muted">Ajuste del logo, prueba digital y preparación. Si el cliente trae su logo listo, elige «No se requiere».</p>
+        <label class="lrow"><span>Cargo (sin IVA)</span><span class="lv">$<input class="num" id="arteval" inputmode="decimal" value="${a.p}"></span></label>
+      </div>
+      <div class="foot">
+        <button class="pill ghost" data-act="arteNo">No se requiere</button>
+        <button class="pill" data-act="arteSi">Agregar cargo</button>
+      </div>
+    </div>`;
+  document.getElementById("arteval")?.select();
+}
+function agregaArte(precio) {
+  const a = arteProd(); if (!a) return closeSheet();
+  S.draft.items.push({ productId: a.id, n: a.n, q: 1, p: Math.max(0, precio || 0), c: a.c || 0, arte: true, fijo: "p" });
+  saveDraft(); closeSheet();
+  ACT.step({ dataset: { to: "3" } });
+  toast(precio > 0 ? `Cargo de arte: ${money(precio)}` : "Arte y preparación sin cargo");
+}
+
 // ---------- Acciones ----------
 const ACT = {
   nav: (el) => go(el.dataset.to),
@@ -896,6 +939,7 @@ const ACT = {
   step: (el) => {
     const to = Number(el.dataset.to), d = S.draft;
     if (to > d.step && !stepValid(d.step)) return;
+    if (d.step === 2 && to === 3 && !d.items.some((i) => i.arte) && arteProd()) return openArte();
     if (to < 4) d.sello = null;
     d.step = to; saveDraft(); S.newClient = false; document.getElementById("toast").hidden = true; renderWizard(); window.scrollTo(0, 0);
   },
@@ -929,7 +973,11 @@ const ACT = {
     const p = S.catalog.find((x) => x.k === SH.pick); if (!p) return;
     SH.q = Math.max(1, Number(document.getElementById("sheetq").value) || 1);
     const ex = S.draft.items.find((i) => i.productId === p.id && (i.ptav || null) === (p.ptav || null));
-    if (ex) ex.q += SH.q; else S.draft.items.push({ productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c });
+    let it = ex;
+    if (ex) ex.q += SH.q;
+    else S.draft.items.push(it = { productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c,
+      ...(p.t ? { t: p.t, min: p.min || null } : {}), ...(p.code === ARTE_CODE ? { arte: true } : {}) });
+    aplicaTramo(it);
     saveDraft(); closeSheet(); renderWizard(); toast(`Agregado: ${SH.q} × ${p.n.split(".")[0]}`);
   },
   addFree: () => {
@@ -942,9 +990,16 @@ const ACT = {
   qty: (el) => {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
     it.q = Math.max(1, Number(it.q) + Number(el.dataset.d));
+    aplicaTramo(it);
     el.closest(".line").querySelector('[data-f="q"]').value = it.q;
     updateLine(k); saveDraft();
   },
+  resetTramo: (el) => {
+    const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
+    delete it.fijo; delete it.m; aplicaTramo(it); saveDraft(); renderWizard();
+  },
+  arteSi: () => agregaArte(parseMoney(document.getElementById("arteval").value)),
+  arteNo: () => agregaArte(0),
   delLine: (el) => { S.draft.items.splice(Number(el.closest(".line").dataset.k), 1); saveDraft(); renderWizard(); },
   desc: (el) => { S.draft.desc = Number(el.dataset.v); saveDraft(); document.querySelectorAll('[data-act="desc"]').forEach((b) => b.classList.toggle("on", Number(b.dataset.v) === S.draft.desc)); updateMini3(); },
   finish: (el) => {
@@ -1192,13 +1247,14 @@ function updateLine(k) {
   const line = document.querySelector(`.line[data-k="${k}"]`);
   if (line) {
     line.querySelector(".lf").innerHTML = lineFoot(it);
-    line.classList.toggle("warn", !(Number(it.p) > 0));
+    line.classList.toggle("warn", !(Number(it.p) > 0) && !it.arte);
     // Nunca reescribir el campo en el que ella está escribiendo; solo el otro (precio o %).
     const act = document.activeElement, pe = line.querySelector('[data-f="p"]'), me = line.querySelector('[data-f="m"]');
     if (pe !== act) pe.value = String(it.p);
     if (me !== act) me.value = margenTxt(it);
     me.classList.remove("m-ok", "m-warn", "m-bad");
     const cls = margenCls(it); if (cls) me.classList.add(cls);
+    const tr = line.querySelector(".tramo"); if (tr && it.t) tr.innerHTML = tramoHtml(it);
     const msg = line.querySelector(".lmsg"), aviso = lineAviso(it);
     msg.textContent = aviso; msg.hidden = !aviso;
   }
@@ -1291,7 +1347,7 @@ document.addEventListener("input", (e) => {
     } else if (f === "c") {
       it.c = parseMoney(t.value);
       if (it.fijo === "m") { const p = precioDesdeMargen(it.c, it.m); if (p !== null) it.p = p; }
-    } else it[f] = parseMoney(t.value);
+    } else { it[f] = parseMoney(t.value); if (f === "q") aplicaTramo(it); }
     saveDraft(); updateLine(k); return;
   }
   if (["anticipoPct", "vigencia", "entrega", "notas"].includes(t.id)) {

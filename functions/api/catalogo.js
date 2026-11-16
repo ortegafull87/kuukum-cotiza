@@ -35,6 +35,23 @@ export async function onRequestGet({ env, data }) {
         tecnicas.get(tid).push({ ptav: t.id, n: String(t.name).trim(), extra: Number(t.price_extra) || 0 });
       }
     }
+    // Tramos por volumen (lista de precios de Odoo, regla fija por producto): el precio ya incluye el logo.
+    // Si un producto tiene tramos, su precio depende de las piezas y no se ofrecen técnicas aparte.
+    const tramos = new Map();   // template -> [[piezas mínimas, precio sin IVA], ...] de menor a mayor
+    if (tmplIds.length) {
+      const items = await call("product.pricelist.item", "search_read", {
+        domain: [["pricelist_id", "=", Number(data.config.pricelist_id) || 1], ["applied_on", "=", "1_product"],
+          ["compute_price", "=", "fixed"], ["product_tmpl_id", "in", tmplIds]],
+        fields: ["product_tmpl_id", "min_quantity", "fixed_price"],
+        limit: 5000
+      });
+      for (const it of items) {
+        const tid = m2oId(it.product_tmpl_id);
+        if (!tramos.has(tid)) tramos.set(tid, []);
+        tramos.get(tid).push([Number(it.min_quantity) || 0, r2(it.fixed_price)]);
+      }
+      for (const t of tramos.values()) t.sort((a, b) => a[0] - b[0]);
+    }
     const out = [], revisar = [];
     for (const r of rows) {
       if (r.default_code && skip.has(String(r.default_code).toUpperCase())) continue;
@@ -43,7 +60,13 @@ export async function onRequestGet({ env, data }) {
       const nombre = String(r.display_name).replace(/^\[[^\]]+\]\s*/, "").trim();
       if (p <= 1 || (c > 0 && p / c > 20)) { revisar.push({ id: r.id, n: nombre, p, c }); continue; }
       const iva = (r.taxes_id || []).length > 0;
-      out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva });
+      const code = r.default_code || undefined;
+      const tr = tramos.get(m2oId(r.product_tmpl_id));
+      if (tr && tr.length) {
+        out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code, t: tr, min: tr[0][0] || undefined });
+        continue;
+      }
+      out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code });
       for (const t of tecnicas.get(m2oId(r.product_tmpl_id)) || []) {
         out.push({ k: `${r.id}-${t.ptav}`, id: r.id, ptav: t.ptav, n: `${nombre} · ${t.n}`,
           p: r2(p + t.extra), c: r2(c + t.extra / (1 + MARKUP_PERSONALIZACION)), iva });

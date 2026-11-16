@@ -40,3 +40,20 @@ export function parseMoney(v) {
 
 export const money = (v) =>
   "$" + r2(v).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Tramos por volumen: [[piezas mínimas, precio], ...] de menor a mayor. Precio del tramo que aplica a q piezas
+// (abajo del primer tramo se usa el primero: el mínimo es solo aviso).
+export function precioTramo(t, q) {
+  if (!t || !t.length) return null;
+  let p = t[0][1];
+  for (const [d, pr] of t) if (Number(q) >= d) p = pr;
+  return p;
+}
+// Texto del tramo que aplica: "50–999 pzs" o "1,000+ pzs".
+export function tramoTexto(t, q) {
+  if (!t || !t.length) return "";
+  let i = 0;
+  t.forEach(([d], k) => { if (Number(q) >= d) i = k; });
+  const f = (n) => Number(n).toLocaleString("es-MX");
+  return i < t.length - 1 ? `${f(t[i][0])}–${f(t[i + 1][0] - 1)} pzs` : `${f(t[i][0])}+ pzs`;
+}
