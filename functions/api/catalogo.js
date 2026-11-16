@@ -5,6 +5,7 @@ import { indexarProveedores } from "../../lib/proveedores.js";
 // Regla de Kuu Kum para personalizaciones (técnicas como Láser): precio = costo de la técnica + 25 %.
 // En Odoo el extra de la técnica guarda el PRECIO; el costo se saca de aquí para que el margen salga bien.
 export const MARKUP_PERSONALIZACION = 0.25;
+const ATTR_COLOR = 10;   // atributo COLOR de Odoo
 const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 const m2oId = (v) => (Array.isArray(v) ? v[0] : v) || null;
 
@@ -17,7 +18,7 @@ export async function onRequestGet({ env, data }) {
     const call = odoo(env, data.log);
     const rows = await call("product.product", "search_read", {
       domain: [["sale_ok", "=", true], ["active", "=", true]],
-      fields: ["id", "display_name", "default_code", "list_price", "standard_price", "taxes_id", "product_tmpl_id", "categ_id"],
+      fields: ["id", "display_name", "default_code", "list_price", "standard_price", "taxes_id", "product_tmpl_id", "categ_id", "product_template_attribute_value_ids"],
       limit: 2000
     });
     const skip = new Set(String(data.config.excluir_codigos || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
@@ -63,12 +64,47 @@ export async function onRequestGet({ env, data }) {
       }));
     }
     const provDe = indexarProveedores(prov);
+    // Letras del SKU (viven en Odoo, campo x_sku_letra) para la guía de SKU, y color de cada variante.
+    // Si algo de esto falla, el catálogo sigue saliendo sin tablas (la guía pide actualizar).
+    const tablas = { categorias: [], colores: [] };
+    const letraCat = new Map(), colorDe = new Map();   // categoría -> letra; variante -> { n, hex, l }
+    try {
+      const cats = await call("product.category", "search_read", { domain: [["x_sku_letra", "!=", false]], fields: ["id", "name", "x_sku_letra"], limit: 200 });
+      const vals = await call("product.attribute.value", "search_read", { domain: [["attribute_id", "=", ATTR_COLOR]], fields: ["id", "name", "html_color", "x_sku_letra"], limit: 500 });
+      const ptavIds = [...new Set(rows.flatMap((r) => r.product_template_attribute_value_ids || []))];
+      const ptavs = ptavIds.length ? await call("product.template.attribute.value", "search_read", {
+        domain: [["id", "in", ptavIds], ["attribute_id", "=", ATTR_COLOR]], fields: ["id", "product_attribute_value_id"], limit: 5000
+      }) : [];
+      const orden = (l) => (/\d/.test(l) ? "~" : "") + l;   // letras primero, números al final
+      for (const c of cats) { const l = String(c.x_sku_letra).trim().toUpperCase(); letraCat.set(c.id, l); tablas.categorias.push({ l, n: String(c.name) }); }
+      const valor = new Map();
+      for (const v of vals) {
+        const col = { n: String(v.name), hex: v.html_color || "" };
+        if (v.x_sku_letra) { col.l = String(v.x_sku_letra).trim().toUpperCase(); tablas.colores.push({ l: col.l, n: col.n, hex: col.hex }); }
+        valor.set(v.id, col);
+      }
+      const cmp = (a, b) => (orden(a.l) < orden(b.l) ? -1 : orden(a.l) > orden(b.l) ? 1 : 0);
+      tablas.categorias.sort(cmp);
+      tablas.colores.sort(cmp);
+      const colPtav = new Map(ptavs.map((t) => [t.id, valor.get(m2oId(t.product_attribute_value_id))]));
+      for (const r of rows) {
+        const col = (r.product_template_attribute_value_ids || []).map((id) => colPtav.get(id)).find(Boolean);
+        if (col) colorDe.set(r.id, col);
+      }
+    } catch (e) {
+      console.error("catalogo: letras SKU no disponibles: " + e.message);
+      tablas.categorias = []; tablas.colores = []; letraCat.clear(); colorDe.clear();
+    }
     const extras = (r) => {
       const o = {};
       const cat = Array.isArray(r.categ_id) ? String(r.categ_id[1]).split(" / ").pop().trim() : "";
       if (cat) o.cat = cat;
       const pv = provDe(r);
       if (pv.length) o.prov = pv;
+      const l = letraCat.get(m2oId(r.categ_id));
+      if (l) o.catL = l;
+      const col = colorDe.get(r.id);
+      if (col) o.col = col;
       return o;
     };
     const out = [], revisar = [];
@@ -92,7 +128,7 @@ export async function onRequestGet({ env, data }) {
           p: r2(p + t.extra), c: r2(c + t.extra / (1 + MARKUP_PERSONALIZACION)), iva, code, ...ex });   // se encuentra por el SKU de su base
       }
     }
-    return json({ productos: out, revisar, at: new Date().toISOString() });
+    return json({ productos: out, revisar, tablas, at: new Date().toISOString() });
   } catch (e) {
     return fail(e.message, 502);
   }

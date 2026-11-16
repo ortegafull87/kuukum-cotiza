@@ -17,7 +17,7 @@ const db = {
   ],
   "product.product": [
     { id: 10, display_name: "Playera Unisex Algodón Blanca M Serigrafía Frente", default_code: "PLA-001", list_price: 180, standard_price: 90, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [10, "Playera Unisex"], categ_id: false },
-    { id: 11, display_name: "Gorra Bordada Negra", default_code: "GOR-001", list_price: 150, standard_price: 70, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [11, "Gorra Bordada"], categ_id: [15, "Promocionales"] }
+    { id: 11, display_name: "Gorra Bordada Negra", default_code: "GOR-001", list_price: 150, standard_price: 70, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [11, "Gorra Bordada"], categ_id: [15, "Promocionales"], product_template_attribute_value_ids: [60] }
   ],
   // Códigos de proveedor: uno ligado a la variante (Geek) y otro a todo el producto (Cromografic).
   "product.supplierinfo": [
@@ -26,7 +26,19 @@ const db = {
   ],
   // Técnica sin variante con precio (como Láser en las plumas) para la gorra.
   "product.template.attribute.value": [
-    { id: 50, name: "Láser", product_tmpl_id: [11, "Gorra Bordada"], "attribute_id.create_variant": "no_variant", ptav_active: true, price_extra: 10 }
+    { id: 50, name: "Láser", product_tmpl_id: [11, "Gorra Bordada"], "attribute_id.create_variant": "no_variant", ptav_active: true, price_extra: 10 },
+    { id: 60, name: "Negro", product_tmpl_id: [11, "Gorra Bordada"], attribute_id: [10, "COLOR"], product_attribute_value_id: [14, "Negro"], ptav_active: true }
+  ],
+  // Letras SKU (x_sku_letra) en categorías y en los valores de COLOR (atributo 10), como en Odoo desde el 16 nov 2026.
+  "product.category": [
+    { id: 15, name: "Promocionales", x_sku_letra: "P" },
+    { id: 2, name: "Expenses", x_sku_letra: false }
+  ],
+  "product.attribute.value": [
+    { id: 14, attribute_id: [10, "COLOR"], name: "Negro", html_color: "#1A1A1A", x_sku_letra: "N" },
+    { id: 13, attribute_id: [10, "COLOR"], name: "Blanco", html_color: "#FFFFFF", x_sku_letra: "B" },
+    { id: 74, attribute_id: [10, "COLOR"], name: "Rosa Gold", html_color: "#E8B4A0", x_sku_letra: "2" },
+    { id: 19, attribute_id: [10, "COLOR"], name: "Fucsia", html_color: "#E0218A", x_sku_letra: false }
   ],
   "product.pricelist.item": [],
   "sale.order": [
