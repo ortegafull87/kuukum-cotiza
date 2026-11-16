@@ -95,6 +95,9 @@ async function quote(over = {}) {
     "catálogo: trae los códigos de proveedor (de la variante y del producto)", g);
   const pl = r.data.productos.find((p) => p.id === 10);
   ok(pl && !("cat" in pl) && !("prov" in pl), "catálogo: sin categoría ni proveedores no agrega campos vacíos", pl);
+  const tec = r.data.productos.find((p) => p.id === 11 && p.ptav);
+  ok(tec && tec.code === "GOR-001" && tec.cat === "Promocionales" && tec.prov && tec.prov.length === 2,
+    "catálogo: la opción con técnica conserva SKU, categoría y proveedores", tec);
 }
 
 // 1. Clientes cautivos

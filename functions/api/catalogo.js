@@ -100,7 +100,7 @@ export async function onRequestGet({ env, data }) {
       out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code, ...ex });
       for (const t of tecnicas.get(m2oId(r.product_tmpl_id)) || []) {
         out.push({ k: `${r.id}-${t.ptav}`, id: r.id, ptav: t.ptav, n: `${nombre} · ${t.n}`,
-          p: r2(p + t.extra), c: r2(c + t.extra / (1 + MARKUP_PERSONALIZACION)), iva });
+          p: r2(p + t.extra), c: r2(c + t.extra / (1 + MARKUP_PERSONALIZACION)), iva, code, ...ex });   // se encuentra por el SKU de su base
       }
     }
     return json({ productos: out, revisar, at: new Date().toISOString() });

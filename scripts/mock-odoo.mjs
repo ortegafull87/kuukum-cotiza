@@ -24,7 +24,11 @@ const db = {
     { id: 1, partner_id: [83, "Geek Promocionales"], product_id: [11, "Gorra Bordada Negra"], product_tmpl_id: [11, "Gorra Bordada"], product_code: "A090744" },
     { id: 2, partner_id: [166, "Cromografic"], product_id: false, product_tmpl_id: [11, "Gorra Bordada"], product_code: "1115A" }
   ],
-  "product.template.attribute.value": [], "product.pricelist.item": [],
+  // Técnica sin variante con precio (como Láser en las plumas) para la gorra.
+  "product.template.attribute.value": [
+    { id: 50, name: "Láser", product_tmpl_id: [11, "Gorra Bordada"], "attribute_id.create_variant": "no_variant", ptav_active: true, price_extra: 10 }
+  ],
+  "product.pricelist.item": [],
   "sale.order": [
     // Pedido confirmado de un contacto hijo de Scouts 12 -> Scouts 12 es cliente cautivo.
     { id: 900, name: "S00900", partner_id: 2, state: "sale", amount_total: 1000, order_line: [] },
