@@ -191,6 +191,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .res .grow { flex: 1; min-width: 0; font-size: 14px; }
 .res .p { font: 700 15px var(--mono); white-space: nowrap; }
 .res .m { font: 12px var(--mono); color: var(--ok); }
+.res .res-sku { display: block; margin-top: 2px; font: 11px var(--mono); color: var(--muted, #6b7a80); letter-spacing: .02em; }
 
 /* Login */
 .login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 16px calc(24px + env(safe-area-inset-bottom)); text-align: center; }

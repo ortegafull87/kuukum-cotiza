@@ -621,7 +621,7 @@ function drawSheet(keepFocus) {
       </div>
       <div class="body">
         <label class="search">${I.search}<input id="sq" placeholder="Buscar en el catálogo…" value="${esc(SH.text)}" autocomplete="off"></label>
-        ${FACETAS.map(([k, label]) => {
+        ${SH.text.trim() && ls.get("ocultarFiltros", true) ? "" : FACETAS.map(([k, label]) => {
           const opts = vals[k];
           if (!opts.length && !SH.sel[k]) return "";
           const list = SH.sel[k] && !opts.includes(SH.sel[k]) ? [SH.sel[k], ...opts] : opts;
@@ -631,7 +631,7 @@ function drawSheet(keepFocus) {
         <div class="label">${pool.length} producto${pool.length === 1 ? "" : "s"}${SH.pick ? "" : " · toca uno para elegirlo"}</div>
         <div style="display:grid;gap:8px">${results.map((p) => {
           const m = p.p > 0 ? Math.round(((p.p - p.c) / p.p) * 100) : 0;
-          return `<button class="res ${SH.pick === p.k ? "on" : ""}" data-act="pickProd" data-id="${esc(p.k)}"><span class="grow">${esc(p.n)}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
+          return `<button class="res ${SH.pick === p.k ? "on" : ""}" data-act="pickProd" data-id="${esc(p.k)}"><span class="grow">${esc(p.n)}${p.code ? `<span class="res-sku">${esc(p.code)}</span>` : ""}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
         }).join("") || `<div class="empty">Nada con esos filtros. Quita un chip o usa "Producto libre".</div>`}</div>
       </div>
       <div class="foot">
@@ -791,6 +791,10 @@ function renderSettings() {
           }).join("")}</div>`).join("")}
           <button class="pill block" type="submit" id="cfgsave">Guardar ajustes</button>
         </form>
+        <div class="card"><h3>En este teléfono</h3>
+          <label class="toggle"><span>Ocultar filtros al escribir en el buscador</span><input type="checkbox" id="ocultarFiltros" ${ls.get("ocultarFiltros", true) ? "checked" : ""}></label>
+          <div class="muted small">Solo cambia este teléfono.</div>
+        </div>
         <div class="card"><h3>Datos</h3>
           <div class="muted small">${S.catalog.length} productos y ${S.clientes.length} clientes guardados en el teléfono.</div>
           <button class="pill soft block" data-act="reload">Actualizar catálogo y clientes</button>
@@ -1510,6 +1514,8 @@ document.addEventListener("keydown", (e) => {
   const q = e.target.closest(".line").querySelector('[data-f="c"]'); if (q) q.focus();
 });
 document.addEventListener("change", (e) => {
+  // Preferencia local (no va al servidor): ocultar los filtros del selector mientras hay texto en el buscador.
+  if (e.target.id === "ocultarFiltros") { ls.set("ocultarFiltros", e.target.checked); toast(e.target.checked ? "Los filtros se ocultarán al escribir" : "Los filtros quedarán siempre visibles"); return; }
   // Al salir de un precio/costo/cantidad, mostrar el valor ya interpretado (p. ej. "1,500" -> 1500).
   const f = e.target.dataset && e.target.dataset.f;
   if (S.draft && ["p", "c", "q", "m"].includes(f) && e.target.closest(".line")) {
