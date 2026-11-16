@@ -3,7 +3,8 @@ import { odoo, getOrCreate, markSent, leerOrden, MSG_ESTADO } from "../../lib/od
 import { calc, money } from "../../public/js/calc.js";
 import { folioVisible, cleanSeal, folioNumero } from "../../public/js/canonical.js";
 
-const CANALES = { WA: "WhatsApp", IG: "Instagram", FB: "Facebook", TT: "TikTok", OT: "Otro" };
+const CANALES = { WA: "WhatsApp", IG: "Instagram", FB: "Facebook", TT: "TikTok", GO: "Google", GP: "ChatGPT",
+  GE: "Gemini", CL: "Claude", TI: "Tienda en línea", OT: "Otro" };
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const last10 = (s) => String(s || "").replace(/\D/g, "").slice(-10);
 const YA_PEDIDO = "Esta cotización ya es pedido (o está cancelada) en Odoo. Duplícala para hacer una nueva.";
