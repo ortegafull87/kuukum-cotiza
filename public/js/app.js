@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.16";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.16";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.16";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.16";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.16";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.16";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.16";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.16";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.17";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.17";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.17";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.17";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.17";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.17";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.17";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.17";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.16";
+const APP_VERSION = "0.4.17";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -439,7 +439,6 @@ function lineCard(it, k) {
   const aviso = lineAviso(it);
   return `
     <div class="line ${Number(it.p) > 0 || it.arte ? "" : "warn"}" data-k="${k}">
-      ${it.productId && !it.arte ? `<button class="icon-btn info-btn" data-act="info" aria-label="Foto y precios por cantidad">${I.info}</button>` : ""}
       <label class="ldesc"><span>Descripción</span>
         <span class="ldesc-f"><textarea class="name" data-f="n" rows="1" enterkeyhint="next" placeholder="¿Qué producto es? Ej. Termo 500 ml grabado">${esc(it.n)}</textarea>${I.pencil}</span></label>
       <div class="lrow"><span>Cantidad</span>
@@ -454,7 +453,8 @@ function lineCard(it, k) {
       <label class="lrow"><span>Precio unit.</span><span class="lv">$<input class="num" data-f="p" inputmode="decimal" enterkeyhint="next" value="${it.p}"></span></label>
       ${it.t ? `<div class="tramo small muted">${tramoHtml(it)}</div>` : ""}
       <div class="foot lf">${lineFoot(it)}</div>
-      <div><button class="link-del" data-act="delLine">Quitar</button></div>
+      <div class="lacts"><button class="link-del" data-act="delLine">Quitar</button>
+        ${it.productId && !it.arte ? `<button class="info-btn" data-act="info" aria-label="Foto y precios por cantidad">${I.info}<span>Ficha</span></button>` : "<span></span>"}<span></span></div>
     </div>`;
 }
 const lineFoot = (it) => `<span>Ganas ${money(it.q * (it.p - it.c))}</span><span>Total <b class="num">${money(it.q * it.p)}</b></span>`;
@@ -931,12 +931,16 @@ function openInfo(k) {
       <div class="sheet-top"><div class="grab"></div>
         <div class="sheet-head"><span></span><h2>Ficha</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div></div>
       <div class="body">
-        <div class="info-fotos">${[1, 2].map((n) => `
-          <div class="info-foto" data-n="${n}">
-            <img src="/api/imagen?id=${Number(it.productId)}&n=${n}" alt="${esc(it.n)}${n === 2 ? " · colores y técnicas" : ""}">
-            <button class="icon-btn info-share" data-act="shareFoto" data-n="${n}" aria-label="Compartir foto ${n}">${I.share}</button>
-          </div>`).join("")}</div>
-        <div class="info-dots small muted" hidden>Desliza para ver la otra foto</div>
+        <div class="info-car">
+          <div class="info-track">${[1, 2].map((n) => `
+            <div class="info-foto" data-n="${n}">
+              <img src="/api/imagen?id=${Number(it.productId)}&n=${n}" alt="${esc(it.n)}${n === 2 ? " · colores y técnicas" : ""}">
+              <button class="icon-btn info-share" data-act="shareFoto" data-n="${n}" aria-label="Compartir foto ${n}">${I.share}</button>
+            </div>`).join("")}</div>
+          <button class="info-nav prev" data-act="fotoNav" data-d="-1" aria-label="Foto anterior">${I.back}</button>
+          <button class="info-nav next" data-act="fotoNav" data-d="1" aria-label="Foto siguiente">${I.next}</button>
+        </div>
+        <div class="info-dots"></div>
         <p><b>${esc(cat.n || it.n)}</b></p>
         ${t ? `
           <div class="label">Precio por cantidad (con logo)</div>
@@ -945,22 +949,39 @@ function openInfo(k) {
         : `<p class="small muted">Este producto no tiene precio por cantidad en Odoo.<br>Precio: ${money(cat.p ?? it.p)} sin IVA · ${iva(cat.p ?? it.p)} con IVA.</p>`}
       </div>
     </div>`;
-  S.info = { k, it, cat, t, fotos: {} };
+  S.info = { k, it, cat, t, fotos: {}, i: 0 };
+  setFoto(0);
   // Foto que no existe (sin Foto 2, o sin internet): se quita su cuadro; si no queda ninguna, un aviso.
   document.querySelectorAll(".info-foto img").forEach((img) => {
     const n = Number(img.closest(".info-foto").dataset.n);
     const falla = () => {
       img.closest(".info-foto").remove();
-      const quedan = document.querySelectorAll(".info-foto").length;
-      const dots = document.querySelector(".info-dots"); if (dots) dots.hidden = quedan < 2;
-      if (!quedan) document.querySelector(".info-fotos").innerHTML = `<div class="info-foto"><span class="muted small">Sin foto en Odoo o sin internet</span></div>`;
+      if (!document.querySelectorAll(".info-foto").length)
+        document.querySelector(".info-track").innerHTML = `<div class="info-foto"><span class="muted small">Sin foto en Odoo o sin internet</span></div>`;
+      setFoto(0);
     };
     img.addEventListener("error", falla);
-    img.addEventListener("load", () => { const dots = document.querySelector(".info-dots"); if (dots) dots.hidden = document.querySelectorAll(".info-foto img").length < 2; });
     // La foto se descarga de una vez para que compartir sea inmediato (iOS pierde el gesto si tarda).
     S.info.fotos[n] = fetch(img.src, { credentials: "same-origin" }).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
   });
 }
+// Carrusel de la ficha: una foto completa a la vez, con flechas, puntos y deslizar.
+function setFoto(i) {
+  const track = document.querySelector(".info-track"); if (!track || !S.info) return;
+  const total = track.querySelectorAll(".info-foto").length;
+  S.info.i = Math.max(0, Math.min(total - 1, i));
+  track.style.transform = `translateX(${-100 * S.info.i}%)`;
+  document.querySelectorAll(".info-nav").forEach((b) => { b.hidden = total < 2; });
+  const dots = document.querySelector(".info-dots");
+  if (dots) dots.innerHTML = total < 2 ? "" : Array.from({ length: total }, (_, k) =>
+    `<button class="dot ${k === S.info.i ? "on" : ""}" data-act="fotoIr" data-i="${k}" aria-label="Foto ${k + 1}"></button>`).join("");
+}
+document.addEventListener("touchstart", (e) => { const c = e.target.closest(".info-car"); if (c && e.touches.length === 1) S.swipeX = e.touches[0].clientX; }, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (S.swipeX == null || !S.info) return;
+  const dx = e.changedTouches[0].clientX - S.swipeX; S.swipeX = null;
+  if (Math.abs(dx) > 40) setFoto(S.info.i + (dx < 0 ? 1 : -1));
+}, { passive: true });
 async function compartirFoto(n) {
   const info = S.info; if (!info) return;
   const blob = await (info.fotos[n] || Promise.resolve(null));
@@ -1092,6 +1113,8 @@ const ACT = {
   },
   info: (el) => openInfo(Number(el.closest(".line").dataset.k)),
   shareFoto: (el) => compartirFoto(Number(el.dataset.n)),
+  fotoNav: (el) => S.info && setFoto(S.info.i + Number(el.dataset.d)),
+  fotoIr: (el) => setFoto(Number(el.dataset.i)),
   resetTramo: (el) => {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
     delete it.fijo; delete it.m; aplicaTramo(it); saveDraft(); renderWizard();

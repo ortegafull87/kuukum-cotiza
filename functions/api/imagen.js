@@ -21,9 +21,9 @@ export async function onRequestGet({ request, env, data }) {
       if (tmpl) {
         const [a] = await call("ir.attachment", "search_read", {
           domain: [["res_model", "=", "product.template"], ["res_id", "=", tmpl], ["name", "=like", "Foto 2 - %"]],
-          fields: ["datas"], limit: 1, order: "id desc"
+          fields: ["raw"], limit: 1, order: "id desc"
         });
-        b64 = a && a.datas;
+        b64 = a && a.raw;   // Odoo 19.3: el contenido del adjunto va en `raw` (datas ya no existe)
       }
     }
     if (!b64) return new Response(null, { status: 404 });
