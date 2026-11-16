@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.13";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.13";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.13";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.13";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.13";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.13";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.13";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.13";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.14";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.14";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.14";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.14";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.14";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.14";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.14";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.14";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.13";
+const APP_VERSION = "0.4.14";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -209,6 +209,7 @@ async function refresh(manual = false) {
     const [cfg, cat, cli] = await Promise.all([api("config"), api("catalogo"), api("clientes")]);
     S.cfg = cfg; ls.set("config", cfg);
     ls.set("catalog", cat); S.catalog = enrich(cat.productos); S.revisar = cat.revisar || [];
+    refrescaTramosBorrador();
     ls.set("clientes", cli); S.clientes = cli.clientes;
     if (!route() || route() === "/" ) go("/nueva");
     await runSync();
@@ -466,6 +467,20 @@ function margenTxt(it) {
 function tramoHtml(it) {
   if (it.fijo) return `Precio manual · <button class="link-del" data-act="resetTramo">volver al tramo (${esc(tramoTexto(it.t, it.q))})</button>`;
   return `Tramo ${esc(tramoTexto(it.t, it.q))} · precio de Odoo con logo`;
+}
+// Al bajar el catálogo, las líneas del borrador toman los precios por cantidad vigentes de Odoo
+// (si ella fijó un precio a mano, se respeta el precio; solo se actualiza la tabla).
+function refrescaTramosBorrador() {
+  if (!S.draft || !S.draft.items) return;
+  let cambio = false;
+  for (const it of S.draft.items) {
+    if (!it.productId) continue;
+    const c = S.catalog.find((x) => x.id === it.productId && (x.ptav || null) === (it.ptav || null));
+    if (!c || JSON.stringify(c.t || null) === JSON.stringify(it.t || null)) continue;
+    if (c.t) { it.t = c.t; it.min = c.min || null; } else { delete it.t; delete it.min; }
+    aplicaTramo(it); cambio = true;
+  }
+  if (cambio) { saveDraft(); if (S.draft.step === 2 && route() === "/nueva") renderWizard(); }
 }
 // Si la línea tiene tramos y ella no fijó precio ni %, el precio sale del tramo según las piezas.
 function aplicaTramo(it) {
@@ -902,7 +917,7 @@ function quoteText(q) {
 function openInfo(k) {
   const it = S.draft.items[k]; if (!it) return;
   const cat = S.catalog.find((x) => x.id === it.productId && (x.ptav || null) === (it.ptav || null)) || {};
-  const t = it.t || cat.t || null;
+  const t = cat.t || it.t || null;   // la del catálogo (Odoo) manda; la de la línea es respaldo
   const iva = (v) => money(r2(v * 1.16));
   let actual = 0; if (t) t.forEach(([d], i) => { if (Number(it.q) >= d) actual = i; });
   const filas = t ? t.map(([d, p], i) => {
