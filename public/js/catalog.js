@@ -2,6 +2,10 @@
 // Ej: "Playera Gildan. Negro. 100% Algodón. 1/DTF/AN. 1/DTF/RE. M - H"
 const N = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+// Clave para comparar códigos (SKU o código de proveedor): mayúsculas, sin acentos y solo letras y números.
+// Así "ku-plu-1115a-neg", "KU PLU 1115A NEG" y "KUPLU1115ANEG" son la misma.
+export const clave = (s) => N(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
 const PRENDAS = [
   ["Sudadera", /sudadera/], ["Polo", /\bpolo\b/], ["Camisa", /camisa/], ["Pañalero", /panalero/],
   ["Playera", /playera|camiseta/], ["Taza", /taza/], ["Tarro", /tarro/], ["Tumbler", /tumbler/],
@@ -58,7 +62,8 @@ export function enrich(products) {
     return {
       ...p,
       k: p.k || String(p.id),   // llave única: un producto puede venir varias veces (sin técnica y con cada técnica)
-      _q: n,
+      _q: N(p.n + " " + (p.cat || "")),   // nombre + categoría
+      _k: [p.code, ...(p.prov || []).map((x) => x.code)].filter(Boolean).map(clave),   // SKU y códigos de proveedor
       tags: {
         prenda: pick(PRENDAS, n).slice(0, 1),
         genero: sg.genero ? [sg.genero] : [],
@@ -75,8 +80,9 @@ export function enrich(products) {
 // Filtra por chips seleccionados ({faceta: valor}) y texto libre.
 export function filter(products, sel, text) {
   const words = N(text || "").split(/\s+/).filter(Boolean);
-  return products.filter((p) =>
-    Object.entries(sel).every(([k, v]) => !v || p.tags[k].includes(v)) && words.every((w) => p._q.includes(w)));
+  const k = clave(text);   // un código se compara completo, sin guiones ni espacios; con menos de 3 caracteres no cuenta
+  const porTexto = (p) => words.every((w) => p._q.includes(w)) || (k.length >= 3 && (p._k || []).some((x) => x.includes(k)));
+  return products.filter((p) => Object.entries(sel).every(([f, v]) => !v || p.tags[f].includes(v)) && porTexto(p));
 }
 
 // Valores disponibles por faceta dentro del conjunto actual (para no mostrar chips sin resultados).
