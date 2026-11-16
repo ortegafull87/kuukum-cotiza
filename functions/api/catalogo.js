@@ -1,5 +1,6 @@
 import { json, fail } from "../../lib/core.js";
 import { odoo } from "../../lib/odoo.js";
+import { indexarProveedores } from "../../lib/proveedores.js";
 
 // Regla de Kuu Kum para personalizaciones (técnicas como Láser): precio = costo de la técnica + 25 %.
 // En Odoo el extra de la técnica guarda el PRECIO; el costo se saca de aquí para que el margen salga bien.
@@ -53,27 +54,15 @@ export async function onRequestGet({ env, data }) {
       for (const t of tramos.values()) t.sort((a, b) => a[0] - b[0]);
     }
     // Códigos de proveedor (pestaña Compra → Proveedores): solo para buscar en Cotiza y mostrarlos a Eunice.
-    // Una fila con variante aplica solo a esa variante; sin variante, a todo el producto.
     const prov = [];
     if (tmplIds.length) {
-      prov.push(...(await call("product.supplierinfo", "search_read", {
+      prov.push(...await call("product.supplierinfo", "search_read", {
         domain: [["product_tmpl_id", "in", tmplIds], ["product_code", "!=", false]],
         fields: ["id", "partner_id", "product_id", "product_tmpl_id", "product_code"],
         limit: 5000
-      })).sort((a, b) => a.id - b.id));
+      }));
     }
-    const provDe = (r) => {
-      const tid = m2oId(r.product_tmpl_id), vistos = new Set(), lista = [];
-      for (const s of prov) {
-        const vid = m2oId(s.product_id);
-        if (m2oId(s.product_tmpl_id) !== tid || (vid && vid !== r.id)) continue;
-        const code = String(s.product_code).trim();
-        if (!code || vistos.has(code)) continue;
-        vistos.add(code);
-        lista.push({ n: Array.isArray(s.partner_id) ? String(s.partner_id[1]) : "", code });
-      }
-      return lista;
-    };
+    const provDe = indexarProveedores(prov);
     const extras = (r) => {
       const o = {};
       const cat = Array.isArray(r.categ_id) ? String(r.categ_id[1]).split(" / ").pop().trim() : "";

@@ -82,7 +82,10 @@ export function filter(products, sel, text) {
   const words = N(text || "").split(/\s+/).filter(Boolean);
   const k = clave(text);   // un código se compara completo, sin guiones ni espacios; con menos de 3 caracteres no cuenta
   const porTexto = (p) => words.every((w) => p._q.includes(w)) || (k.length >= 3 && (p._k || []).some((x) => x.includes(k)));
-  return products.filter((p) => Object.entries(sel).every(([f, v]) => !v || p.tags[f].includes(v)) && porTexto(p));
+  const conChips = products.filter((p) => Object.entries(sel).every(([f, v]) => !v || p.tags[f].includes(v)));
+  // Código exacto (el SKU que llega por WhatsApp): solo esas coincidencias, no los códigos que nada más lo contienen.
+  const exactos = k.length >= 3 ? conChips.filter((p) => (p._k || []).includes(k)) : [];
+  return exactos.length ? exactos : conChips.filter(porTexto);
 }
 
 // Valores disponibles por faceta dentro del conjunto actual (para no mostrar chips sin resultados).

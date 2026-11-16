@@ -607,7 +607,10 @@ document.addEventListener("click", (e) => {
   if (a) { e.preventDefault(); toast("Este producto aún no está publicado en la tienda"); }
 });
 function drawSheet(keepFocus) {
-  const pool = filter(S.catalog, SH.sel, SH.text);
+  // Con los filtros ocultos (hay texto y la preferencia está encendida) los chips no filtran: no se ven y no se pueden quitar.
+  // La selección se conserva y vuelve a aplicar al borrar el texto.
+  const ocultos = !!SH.text.trim() && ls.get("ocultarFiltros", true);
+  const pool = filter(S.catalog, ocultos ? {} : SH.sel, SH.text);
   const vals = facetValues(pool);
   const results = pool.slice(0, 60);
   if (!SH.pick && pool.length === 1) SH.pick = pool[0].k;   // si solo queda uno, ya está elegido
@@ -621,7 +624,7 @@ function drawSheet(keepFocus) {
       </div>
       <div class="body">
         <label class="search">${I.search}<input id="sq" placeholder="Buscar en el catálogo…" value="${esc(SH.text)}" autocomplete="off"></label>
-        ${SH.text.trim() && ls.get("ocultarFiltros", true) ? "" : FACETAS.map(([k, label]) => {
+        ${ocultos ? "" : FACETAS.map(([k, label]) => {
           const opts = vals[k];
           if (!opts.length && !SH.sel[k]) return "";
           const list = SH.sel[k] && !opts.includes(SH.sel[k]) ? [SH.sel[k], ...opts] : opts;
