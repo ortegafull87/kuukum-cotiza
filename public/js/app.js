@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.17";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.17";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.17";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.17";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.17";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.17";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.17";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.17";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.18";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.18";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.18";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.18";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.18";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.18";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.18";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.18";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.17";
+const APP_VERSION = "0.4.18";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -34,6 +34,7 @@ const folioDe = (q) => folioVisible(q.folio, q.rev);
 
 const I = {
   share: '<svg viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>',
+  tienda: '<svg viewBox="0 0 24 24"><path d="M4 9.5 5.5 4h13L20 9.5"/><path d="M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M5.5 12.5V20h13v-7.5M10 20v-4.5h4V20"/></svg>',
   info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -454,7 +455,7 @@ function lineCard(it, k) {
       ${it.t ? `<div class="tramo small muted">${tramoHtml(it)}</div>` : ""}
       <div class="foot lf">${lineFoot(it)}</div>
       <div class="lacts"><button class="link-del" data-act="delLine">Quitar</button>
-        ${it.productId && !it.arte ? `<button class="info-btn" data-act="info" aria-label="Foto y precios por cantidad">${I.info}<span>Ficha</span></button>` : "<span></span>"}<span></span></div>
+        ${it.productId && !it.arte ? `<button class="info-btn" data-act="info" aria-label="Ficha: foto y precios por cantidad">${I.info}</button>` : "<span></span>"}<span></span></div>
     </div>`;
 }
 const lineFoot = (it) => `<span>Ganas ${money(it.q * (it.p - it.c))}</span><span>Total <b class="num">${money(it.q * it.p)}</b></span>`;
@@ -598,6 +599,13 @@ function openSheet() {
   drawSheet();
 }
 function closeSheet() { $sheet.innerHTML = ""; }
+// Con una hoja abierta, la pantalla de atrás no se mueve.
+new MutationObserver(() => document.documentElement.classList.toggle("hoja-abierta", $sheet.childElementCount > 0))
+  .observe($sheet, { childList: true });
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("#info-tienda[aria-disabled]");
+  if (a) { e.preventDefault(); toast("Este producto aún no está publicado en la tienda"); }
+});
 function drawSheet(keepFocus) {
   const pool = filter(S.catalog, SH.sel, SH.text);
   const vals = facetValues(pool);
@@ -930,17 +938,18 @@ function openInfo(k) {
     <div class="sheet" role="dialog" aria-label="Ficha del producto">
       <div class="sheet-top"><div class="grab"></div>
         <div class="sheet-head"><span></span><h2>Ficha</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div></div>
-      <div class="body">
+      <div class="body info-body">
         <div class="info-car">
           <div class="info-track">${[1, 2].map((n) => `
-            <div class="info-foto" data-n="${n}">
-              <img src="/api/imagen?id=${Number(it.productId)}&n=${n}" alt="${esc(it.n)}${n === 2 ? " · colores y técnicas" : ""}">
-              <button class="icon-btn info-share" data-act="shareFoto" data-n="${n}" aria-label="Compartir foto ${n}">${I.share}</button>
-            </div>`).join("")}</div>
+            <div class="info-foto cargando" data-n="${n}"><img alt="${esc(it.n)}${n === 2 ? " · colores y técnicas" : ""}"></div>`).join("")}</div>
           <button class="info-nav prev" data-act="fotoNav" data-d="-1" aria-label="Foto anterior">${I.back}</button>
           <button class="info-nav next" data-act="fotoNav" data-d="1" aria-label="Foto siguiente">${I.next}</button>
+          <div class="info-dots"></div>
         </div>
-        <div class="info-dots"></div>
+        <div class="info-acts">
+          <button class="info-act" data-act="shareFoto" aria-label="Compartir esta foto">${I.share}</button>
+          <a class="info-act" id="info-tienda" target="_blank" rel="noopener" aria-label="Ver el producto en la tienda" aria-disabled="true">${I.tienda}</a>
+        </div>
         <p><b>${esc(cat.n || it.n)}</b></p>
         ${t ? `
           <div class="label">Precio por cantidad (con logo)</div>
@@ -951,19 +960,36 @@ function openInfo(k) {
     </div>`;
   S.info = { k, it, cat, t, fotos: {}, i: 0 };
   setFoto(0);
-  // Foto que no existe (sin Foto 2, o sin internet): se quita su cuadro; si no queda ninguna, un aviso.
-  document.querySelectorAll(".info-foto img").forEach((img) => {
-    const n = Number(img.closest(".info-foto").dataset.n);
-    const falla = () => {
-      img.closest(".info-foto").remove();
-      if (!document.querySelectorAll(".info-foto").length)
-        document.querySelector(".info-track").innerHTML = `<div class="info-foto"><span class="muted small">Sin foto en Odoo o sin internet</span></div>`;
-      setFoto(0);
-    };
-    img.addEventListener("error", falla);
-    // La foto se descarga de una vez para que compartir sea inmediato (iOS pierde el gesto si tarda).
-    S.info.fotos[n] = fetch(img.src, { credentials: "same-origin" }).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+  // Cada foto se descarga una sola vez (con un reintento) y se muestra desde esa misma copia,
+  // así compartir es inmediato (iOS pierde el gesto si tarda). Si no existe (sin Foto 2), se quita su cuadro.
+  const info = S.info;
+  const baja = (n, intento = 0) => fetch(`/api/imagen?id=${Number(it.productId)}&n=${n}`, { credentials: "same-origin" })
+    .then((r) => (r.ok ? r.blob() : r.status === 404 ? null : Promise.reject(new Error(r.status))))
+    .catch(() => (intento < 1 ? new Promise((ok) => setTimeout(ok, 800)).then(() => baja(n, intento + 1)) : null));
+  [1, 2].forEach((n) => {
+    info.fotos[n] = baja(n).then((blob) => {
+      if (S.info !== info) return blob;
+      const box = document.querySelector(`.info-foto[data-n="${n}"]`); if (!box) return blob;
+      if (!blob) {
+        box.remove();
+        if (!document.querySelectorAll(".info-foto").length)
+          document.querySelector(".info-track").innerHTML = `<div class="info-foto"><span class="muted small">Sin foto en Odoo o sin internet</span></div>`;
+        setFoto(S.info.i);
+      } else {
+        const img = box.querySelector("img");
+        img.onload = () => box.classList.remove("cargando");
+        img.src = URL.createObjectURL(blob);
+      }
+      return blob;
+    });
   });
+  // Liga a la tienda (solo si el producto está publicado ahí).
+  const sku = cat.code || (S.catalog.find((x) => x.id === it.productId && x.code) || {}).code || it.code;
+  if (sku) fetch(`/api/tienda?sku=${encodeURIComponent(sku)}`, { credentials: "same-origin" })
+    .then((r) => (r.ok ? r.json() : null)).then((d) => {
+      const a = document.getElementById("info-tienda");
+      if (a && d && d.url && S.info === info) { a.href = d.url; a.removeAttribute("aria-disabled"); }
+    }).catch(() => {});
 }
 // Carrusel de la ficha: una foto completa a la vez, con flechas, puntos y deslizar.
 function setFoto(i) {
@@ -982,8 +1008,9 @@ document.addEventListener("touchend", (e) => {
   const dx = e.changedTouches[0].clientX - S.swipeX; S.swipeX = null;
   if (Math.abs(dx) > 40) setFoto(S.info.i + (dx < 0 ? 1 : -1));
 }, { passive: true });
-async function compartirFoto(n) {
+async function compartirFoto() {
   const info = S.info; if (!info) return;
+  const n = Number((document.querySelectorAll(".info-foto")[info.i] || {}).dataset?.n) || 1;
   const blob = await (info.fotos[n] || Promise.resolve(null));
   if (!blob) return toast("No se pudo cargar la foto. Revisa tu internet.");
   const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
@@ -1112,7 +1139,7 @@ const ACT = {
     updateLine(k); saveDraft();
   },
   info: (el) => openInfo(Number(el.closest(".line").dataset.k)),
-  shareFoto: (el) => compartirFoto(Number(el.dataset.n)),
+  shareFoto: () => compartirFoto(),
   fotoNav: (el) => S.info && setFoto(S.info.i + Number(el.dataset.d)),
   fotoIr: (el) => setFoto(Number(el.dataset.i)),
   resetTramo: (el) => {

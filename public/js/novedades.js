@@ -1,7 +1,7 @@
 // Recorridos guiados de novedades (Driver.js, en public/vendor/driver.js). La primera vez que ella llega a la pantalla
 // donde ocurrió un cambio, 1–3 burbujas lo explican; si ya lo vio o lo saltó, no vuelve a salir.
 // Los vistos viven en localStorage (kk_tours) y nunca se borran al reparar ni al actualizar.
-import { ls, logError } from "./store.js?v=0.4.17";
+import { ls, logError } from "./store.js?v=0.4.18";
 
 // Una entrada por cambio visible. El id nunca se reutiliza ni se cambia (es lo que se guarda como "visto").
 // Se conservan las de las últimas ~3 versiones; las más viejas se borran del archivo.
@@ -12,7 +12,7 @@ export const NOVEDADES = [
     ruta: "#/nueva",
     pasos: [
       { el: ".line .info-btn", titulo: "Ficha del producto",
-        texto: "Toca la (i) para ver la foto del producto y su tabla de precio por cantidad, con y sin IVA. Te sirve para enseñársela al cliente." },
+        texto: "Toca el botón morado (i) para ver las fotos del producto y su tabla de precio por cantidad, con y sin IVA. Abajo de la foto puedes compartirla por WhatsApp o abrir el producto en la tienda." },
       { el: ".line .tramo", titulo: "Precio por cantidad",
         texto: "En los productos con logo incluido, el precio cambia solo según las piezas. Si escribes un precio a mano, se respeta; para regresar al de Odoo toca «volver al tramo»." },
       { el: '.line [data-f="q"]', titulo: "Cantidad mínima",
