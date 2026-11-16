@@ -86,6 +86,17 @@ async function quote(over = {}) {
   ok(nextFolio({ email: "kuukum.mx@gmail.com", prefijo: "K", ultimoFolio: 5 }) === "AP-K0006", "después de KK-K0005 sigue AP-K0006 (no se reinicia)");
 }
 
+// 0e. Catálogo: categoría y códigos de proveedor (v0.4.20)
+{
+  const r = await api("catalogo");
+  const g = r.data.productos.find((p) => p.id === 11);
+  ok(g && g.cat === "Promocionales", "catálogo: trae la categoría", g);
+  ok(g && JSON.stringify(g.prov) === JSON.stringify([{ n: "Geek Promocionales", code: "A090744" }, { n: "Cromografic", code: "1115A" }]),
+    "catálogo: trae los códigos de proveedor (de la variante y del producto)", g);
+  const pl = r.data.productos.find((p) => p.id === 10);
+  ok(pl && !("cat" in pl) && !("prov" in pl), "catálogo: sin categoría ni proveedores no agrega campos vacíos", pl);
+}
+
 // 1. Clientes cautivos
 {
   const { status, data } = await api("clientes");

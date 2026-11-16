@@ -16,7 +16,7 @@ export async function onRequestGet({ env, data }) {
     const call = odoo(env, data.log);
     const rows = await call("product.product", "search_read", {
       domain: [["sale_ok", "=", true], ["active", "=", true]],
-      fields: ["id", "display_name", "default_code", "list_price", "standard_price", "taxes_id", "product_tmpl_id"],
+      fields: ["id", "display_name", "default_code", "list_price", "standard_price", "taxes_id", "product_tmpl_id", "categ_id"],
       limit: 2000
     });
     const skip = new Set(String(data.config.excluir_codigos || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
@@ -52,6 +52,36 @@ export async function onRequestGet({ env, data }) {
       }
       for (const t of tramos.values()) t.sort((a, b) => a[0] - b[0]);
     }
+    // Códigos de proveedor (pestaña Compra → Proveedores): solo para buscar en Cotiza y mostrarlos a Eunice.
+    // Una fila con variante aplica solo a esa variante; sin variante, a todo el producto.
+    const prov = [];
+    if (tmplIds.length) {
+      prov.push(...(await call("product.supplierinfo", "search_read", {
+        domain: [["product_tmpl_id", "in", tmplIds], ["product_code", "!=", false]],
+        fields: ["id", "partner_id", "product_id", "product_tmpl_id", "product_code"],
+        limit: 5000
+      })).sort((a, b) => a.id - b.id));
+    }
+    const provDe = (r) => {
+      const tid = m2oId(r.product_tmpl_id), vistos = new Set(), lista = [];
+      for (const s of prov) {
+        const vid = m2oId(s.product_id);
+        if (m2oId(s.product_tmpl_id) !== tid || (vid && vid !== r.id)) continue;
+        const code = String(s.product_code).trim();
+        if (!code || vistos.has(code)) continue;
+        vistos.add(code);
+        lista.push({ n: Array.isArray(s.partner_id) ? String(s.partner_id[1]) : "", code });
+      }
+      return lista;
+    };
+    const extras = (r) => {
+      const o = {};
+      const cat = Array.isArray(r.categ_id) ? String(r.categ_id[1]).split(" / ").pop().trim() : "";
+      if (cat) o.cat = cat;
+      const pv = provDe(r);
+      if (pv.length) o.prov = pv;
+      return o;
+    };
     const out = [], revisar = [];
     for (const r of rows) {
       if (r.default_code && skip.has(String(r.default_code).toUpperCase())) continue;
@@ -63,10 +93,11 @@ export async function onRequestGet({ env, data }) {
       const code = r.default_code || undefined;
       const tr = tramos.get(m2oId(r.product_tmpl_id));
       if (tr && tr.length) {
-        out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code, t: tr, min: tr[0][0] || undefined });
+        out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code, t: tr, min: tr[0][0] || undefined, ...extras(r) });
         continue;
       }
-      out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code });
+      const ex = extras(r);
+      out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code, ...ex });
       for (const t of tecnicas.get(m2oId(r.product_tmpl_id)) || []) {
         out.push({ k: `${r.id}-${t.ptav}`, id: r.id, ptav: t.ptav, n: `${nombre} · ${t.n}`,
           p: r2(p + t.extra), c: r2(c + t.extra / (1 + MARKUP_PERSONALIZACION)), iva });

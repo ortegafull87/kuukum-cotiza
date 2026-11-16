@@ -16,9 +16,15 @@ const db = {
     { id: 4, name: "Cliente Con Compras Sin Correo", phone: "442 555 6666", email: false, customer_rank: 1, active: true, parent_id: false }
   ],
   "product.product": [
-    { id: 10, display_name: "Playera Unisex Algodón Blanca M Serigrafía Frente", default_code: "PLA-001", list_price: 180, standard_price: 90, taxes_id: [14], sale_ok: true, active: true },
-    { id: 11, display_name: "Gorra Bordada Negra", default_code: "GOR-001", list_price: 150, standard_price: 70, taxes_id: [14], sale_ok: true, active: true }
+    { id: 10, display_name: "Playera Unisex Algodón Blanca M Serigrafía Frente", default_code: "PLA-001", list_price: 180, standard_price: 90, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [10, "Playera Unisex"], categ_id: false },
+    { id: 11, display_name: "Gorra Bordada Negra", default_code: "GOR-001", list_price: 150, standard_price: 70, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [11, "Gorra Bordada"], categ_id: [15, "Promocionales"] }
   ],
+  // Códigos de proveedor: uno ligado a la variante (Geek) y otro a todo el producto (Cromografic).
+  "product.supplierinfo": [
+    { id: 1, partner_id: [83, "Geek Promocionales"], product_id: [11, "Gorra Bordada Negra"], product_tmpl_id: [11, "Gorra Bordada"], product_code: "A090744" },
+    { id: 2, partner_id: [166, "Cromografic"], product_id: false, product_tmpl_id: [11, "Gorra Bordada"], product_code: "1115A" }
+  ],
+  "product.template.attribute.value": [], "product.pricelist.item": [],
   "sale.order": [
     // Pedido confirmado de un contacto hijo de Scouts 12 -> Scouts 12 es cliente cautivo.
     { id: 900, name: "S00900", partner_id: 2, state: "sale", amount_total: 1000, order_line: [] },
@@ -39,7 +45,7 @@ function match(model, r, domain = []) {
   return domain.every((c) => {
     if (!Array.isArray(c)) return true;
     const [f, op, v] = c;
-    const x = r[f];
+    const x = Array.isArray(r[f]) ? r[f][0] : r[f];   // many2one [id, nombre] se compara por id, como Odoo
     switch (op) {
       case "=": return v === false ? !x : x === v;
       case "!=": return v === false ? !!x : x !== v;
@@ -54,7 +60,7 @@ function match(model, r, domain = []) {
 function out(model, r, fields) {
   const o = { id: r.id };
   for (const f of fields || Object.keys(r)) {
-    if (f === "partner_id") o[f] = m2o("res.partner", r.partner_id);
+    if (f === "partner_id") o[f] = Array.isArray(r.partner_id) ? r.partner_id : m2o("res.partner", r.partner_id);
     else if (f === "commercial_partner_id") o[f] = m2o("res.partner", commercial(r.id));
     else o[f] = r[f] ?? false;
   }
