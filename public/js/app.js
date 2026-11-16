@@ -1,15 +1,15 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.14";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.14";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.14";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.14";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.14";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.14";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.14";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.14";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.16";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.16";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.16";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.16";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.16";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.16";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.16";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.16";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.14";
+const APP_VERSION = "0.4.16";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -33,6 +33,7 @@ const PANTALLAS = ["Inicio de sesión", "Paso 1 Cliente", "Paso 2 Productos", "P
 const folioDe = (q) => folioVisible(q.folio, q.rev);
 
 const I = {
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>',
   info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -930,8 +931,12 @@ function openInfo(k) {
       <div class="sheet-top"><div class="grab"></div>
         <div class="sheet-head"><span></span><h2>Ficha</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div></div>
       <div class="body">
-        <div class="info-foto"><img src="/api/imagen?id=${Number(it.productId)}" alt="${esc(it.n)}"
-          onerror="this.parentNode.innerHTML='<span class=&quot;muted small&quot;>Sin foto en Odoo o sin internet</span>'"></div>
+        <div class="info-fotos">${[1, 2].map((n) => `
+          <div class="info-foto" data-n="${n}">
+            <img src="/api/imagen?id=${Number(it.productId)}&n=${n}" alt="${esc(it.n)}${n === 2 ? " · colores y técnicas" : ""}">
+            <button class="icon-btn info-share" data-act="shareFoto" data-n="${n}" aria-label="Compartir foto ${n}">${I.share}</button>
+          </div>`).join("")}</div>
+        <div class="info-dots small muted" hidden>Desliza para ver la otra foto</div>
         <p><b>${esc(cat.n || it.n)}</b></p>
         ${t ? `
           <div class="label">Precio por cantidad (con logo)</div>
@@ -940,6 +945,35 @@ function openInfo(k) {
         : `<p class="small muted">Este producto no tiene precio por cantidad en Odoo.<br>Precio: ${money(cat.p ?? it.p)} sin IVA · ${iva(cat.p ?? it.p)} con IVA.</p>`}
       </div>
     </div>`;
+  S.info = { k, it, cat, t, fotos: {} };
+  // Foto que no existe (sin Foto 2, o sin internet): se quita su cuadro; si no queda ninguna, un aviso.
+  document.querySelectorAll(".info-foto img").forEach((img) => {
+    const n = Number(img.closest(".info-foto").dataset.n);
+    const falla = () => {
+      img.closest(".info-foto").remove();
+      const quedan = document.querySelectorAll(".info-foto").length;
+      const dots = document.querySelector(".info-dots"); if (dots) dots.hidden = quedan < 2;
+      if (!quedan) document.querySelector(".info-fotos").innerHTML = `<div class="info-foto"><span class="muted small">Sin foto en Odoo o sin internet</span></div>`;
+    };
+    img.addEventListener("error", falla);
+    img.addEventListener("load", () => { const dots = document.querySelector(".info-dots"); if (dots) dots.hidden = document.querySelectorAll(".info-foto img").length < 2; });
+    // La foto se descarga de una vez para que compartir sea inmediato (iOS pierde el gesto si tarda).
+    S.info.fotos[n] = fetch(img.src, { credentials: "same-origin" }).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+  });
+}
+async function compartirFoto(n) {
+  const info = S.info; if (!info) return;
+  const blob = await (info.fotos[n] || Promise.resolve(null));
+  if (!blob) return toast("No se pudo cargar la foto. Revisa tu internet.");
+  const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
+  const nombre = (info.cat.n || info.it.n).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+  const file = new File([blob], `${nombre}-${n}.${ext}`, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); } catch (e) { if (e.name !== "AbortError") toast("No se pudo compartir"); }
+    return;
+  }
+  // Sin compartir archivos (navegador de escritorio): se abre la foto para guardarla o arrastrarla.
+  window.open(URL.createObjectURL(blob), "_blank");
 }
 
 // ---------- Cargo de arte y preparación ----------
@@ -1057,6 +1091,7 @@ const ACT = {
     updateLine(k); saveDraft();
   },
   info: (el) => openInfo(Number(el.closest(".line").dataset.k)),
+  shareFoto: (el) => compartirFoto(Number(el.dataset.n)),
   resetTramo: (el) => {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
     delete it.fijo; delete it.m; aplicaTramo(it); saveDraft(); renderWizard();
