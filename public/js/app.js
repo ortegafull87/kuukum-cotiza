@@ -1,16 +1,16 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.23";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.23";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.23";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.23";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.23";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.23";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.23";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.23";
-import { desarmarSku } from "./sku.js?v=0.4.23";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.24";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.24";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.24";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.24";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.24";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.24";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.24";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.24";
+import { desarmarSku } from "./sku.js?v=0.4.24";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.23";
+const APP_VERSION = "0.4.24";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -1183,13 +1183,15 @@ const ACT = {
   addPicked: () => {
     const p = S.catalog.find((x) => x.k === SH.pick); if (!p) return;
     SH.q = Math.max(1, Number(document.getElementById("sheetq").value) || 1);
-    const ex = S.draft.items.find((i) => i.productId === p.id && (i.ptav || null) === (p.ptav || null));
-    let it = ex;
-    if (ex) ex.q += SH.q;
-    else S.draft.items.push(it = { productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c,
-      ...(p.t ? { t: p.t, min: p.min || null } : {}), ...(esArte(p) ? { arte: true } : {}) });
+    // Siempre renglón nuevo (0.4.24): el mismo producto puede ir varias veces con distintas piezas
+    // (p. ej. 20, 50 y 100) para que el cliente compare; cada renglón toma el precio de su tramo.
+    const repetido = S.draft.items.some((i) => i.productId === p.id && (i.ptav || null) === (p.ptav || null));
+    const it = { productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c,
+      ...(p.t ? { t: p.t, min: p.min || null } : {}), ...(esArte(p) ? { arte: true } : {}) };
+    S.draft.items.push(it);
     aplicaTramo(it);
-    saveDraft(); closeSheet(); renderWizard(); toast(`Agregado: ${SH.q} × ${p.n.split(".")[0]}`);
+    saveDraft(); closeSheet(); renderWizard();
+    toast(repetido ? `Agregado en otro renglón: ${SH.q} × ${p.n.split(".")[0]}` : `Agregado: ${SH.q} × ${p.n.split(".")[0]}`, repetido ? 3000 : undefined);
   },
   addFree: () => {
     S.draft.items.push({ productId: null, n: "", q: 1, p: 0, c: 0 });

@@ -1,11 +1,20 @@
 // Recorridos guiados de novedades (Driver.js, en public/vendor/driver.js). La primera vez que ella llega a la pantalla
 // donde ocurrió un cambio, 1–3 burbujas lo explican; si ya lo vio o lo saltó, no vuelve a salir.
 // Los vistos viven en localStorage (kk_tours) y nunca se borran al reparar ni al actualizar.
-import { ls, logError } from "./store.js?v=0.4.23";
+import { ls, logError } from "./store.js?v=0.4.24";
 
 // Una entrada por cambio visible. El id nunca se reutiliza ni se cambia (es lo que se guarda como "visto").
 // Se conservan las de las últimas ~3 versiones; las más viejas se borran del archivo.
 export const NOVEDADES = [
+  {
+    id: "0.4.24-mismo-producto",
+    titulo: "Mismo producto, varias cantidades",
+    ruta: "#/nueva",
+    pasos: [
+      { el: "button.dashed[data-act=openSheet]", titulo: "Mismo producto, varias cantidades",
+        texto: "Si agregas un producto que ya está en la cotización, ahora entra en otro renglón en vez de sumarse. Así puedes cotizar la misma pluma con 20, 50 y 100 piezas y el cliente compara; cada renglón toma el precio de su cantidad." }
+    ]
+  },
   {
     id: "0.4.21-guia-sku",
     titulo: "Guía de SKU",
