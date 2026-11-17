@@ -1,16 +1,16 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.22";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.22";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.22";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.22";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.22";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.22";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.22";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.22";
-import { desarmarSku } from "./sku.js?v=0.4.22";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.23";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.23";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.23";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.23";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.23";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.23";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.23";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.23";
+import { desarmarSku } from "./sku.js?v=0.4.23";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.22";
+const APP_VERSION = "0.4.23";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -968,7 +968,7 @@ function openGuia(code, prod) {
             ${d.formato === "anterior" ? `<p class="small muted">Formato anterior: KU + categoría + modelo del proveedor + color. Pronto cambia al corto, p. ej. KP004N.</p>` : ""}
             ${d.partes.length === 3 ? `<p class="small muted">Sin color: el SKU termina en el modelo.</p>` : ""}` : ""}
           ${code && d.formato === "otro" ? `<p class="small muted">Este código no sigue el formato de Kuu Kum.</p>` : ""}
-          <p class="small muted">Formato: <b>K</b> (Kuu Kum) + <b>categoría</b> + <b>modelo</b> de 3 números + <b>color</b>. Ejemplo: KP004N = Plumas, modelo 4, Negro.</p>
+          <p class="small muted">Formato: <b>K</b> (Kuu Kum) + <b>categoría</b> + <b>modelo</b> de 3 números + <b>color</b>. Ejemplo: KP004N = Bolígrafos, modelo 4, Negro.</p>
           ${tablas && (tablas.categorias || []).length ? tabla("Categoría (2ª letra)", tablas.categorias, "categoria") + tabla("Color (última letra)", tablas.colores || [], "color")
             : `<div class="notice info">Actualiza el catálogo en Ajustes para ver las tablas de letras.</div>`}
         </div>
