@@ -17,7 +17,7 @@ const db = {
   ],
   "product.product": [
     { id: 10, display_name: "Playera Unisex Algodón Blanca M Serigrafía Frente", default_code: "PLA-001", list_price: 180, standard_price: 90, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [10, "Playera Unisex"], categ_id: false },
-    { id: 11, display_name: "Gorra Bordada Negra", default_code: "GOR-001", list_price: 150, standard_price: 70, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [11, "Gorra Bordada"], categ_id: [15, "Promocionales"], product_template_attribute_value_ids: [60] }
+    { id: 11, display_name: "Gorra Bordada Negra", default_code: "KU-GOR-A2148-NEG", list_price: 150, standard_price: 70, taxes_id: [14], sale_ok: true, active: true, product_tmpl_id: [11, "Gorra Bordada"], categ_id: [15, "Promocionales"], product_template_attribute_value_ids: [60] }
   ],
   // Códigos de proveedor: uno ligado a la variante (Geek) y otro a todo el producto (Cromografic).
   "product.supplierinfo": [

@@ -6,6 +6,7 @@ import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.20";
 import { openScanner, closeScanner } from "./scanner.js?v=0.4.20";
 import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.20";
 import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.20";
+import { desarmarSku } from "./sku.js?v=0.4.20";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
@@ -634,7 +635,7 @@ function drawSheet(keepFocus) {
         <div class="label">${pool.length} producto${pool.length === 1 ? "" : "s"}${SH.pick ? "" : " · toca uno para elegirlo"}</div>
         <div style="display:grid;gap:8px">${results.map((p) => {
           const m = p.p > 0 ? Math.round(((p.p - p.c) / p.p) * 100) : 0;
-          return `<button class="res ${SH.pick === p.k ? "on" : ""}" data-act="pickProd" data-id="${esc(p.k)}"><span class="grow">${esc(p.n)}${p.code ? `<span class="res-sku">${esc(p.code)}</span>` : ""}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
+          return `<button class="res ${SH.pick === p.k ? "on" : ""}" data-act="pickProd" data-id="${esc(p.k)}"><span class="grow">${esc(p.n)}${skuTag(p.code, p, "res-sku")}</span><span style="text-align:right"><span class="p">${money(p.p)}</span><br><span class="m">${m}%</span></span></button>`;
         }).join("") || `<div class="empty">Nada con esos filtros. Quita un chip o usa "Producto libre".</div>`}</div>
       </div>
       <div class="foot">
@@ -805,6 +806,10 @@ function renderSettings() {
             <div class="small muted" style="display:grid;gap:6px;padding-top:6px">${S.revisar.map((p) => `<div>${esc(p.n)} — <span class="num">${money(p.p)}</span></div>`).join("")}</div></details>` : ""}
           <div class="muted small">La app refleja si en Odoo una cotización se confirmó, se canceló o se eliminó. Los cambios de productos o precios hechos allá no regresan a la app: Odoo manda. Para cambiar una cotización desde aquí usa <b>Editar</b>, que crea una revisión (R2, R3…).</div>
         </div>
+        <div class="card"><h3>Guía de SKU</h3>
+          <div class="muted small">Qué significa cada letra del SKU: categoría, modelo y color.</div>
+          <button class="pill soft block" data-act="guiaSku" id="btn-guia-sku">Ver la guía</button>
+        </div>
         <div class="card"><h3>Ayuda</h3>
           <div class="muted small">¿Algo no funcionó como esperabas? Cuéntanos y lo revisamos.</div>
           <button class="pill soft block" data-act="nav" data-to="/reportar">Reportar un problema</button>
@@ -929,6 +934,47 @@ function quoteText(q) {
     `\n\nSello: ${formatSeal(q.sello)}`;
 }
 
+// ---------- Guía de SKU: capa encima de todo (no cierra la hoja ni cambia de pantalla) ----------
+// Las letras vienen de Odoo con el catálogo (tablas); un catálogo guardado antes de 0.4.21 no las trae.
+const tablasSku = () => (ls.get("catalog", {}) || {}).tablas;
+// SKU que se puede tocar para abrir la guía; los códigos que no siguen el formato se muestran sin enlace.
+function skuTag(code, prod, cls) {
+  if (!code) return "";
+  if (desarmarSku(code, tablasSku(), prod || {}).formato === "otro") return `<span class="${cls}">${esc(code)}</span>`;
+  return `<span class="${cls} sku-link" role="button" tabindex="0" data-act="guiaSku" data-sku="${esc(code)}" data-k="${esc((prod && prod.k) || "")}" aria-label="Qué significa el SKU ${esc(code)}">${esc(code)}</span>`;
+}
+function openGuia(code, prod) {
+  const tablas = tablasSku();
+  const d = code ? desarmarSku(code, tablas, prod || {}) : { formato: "ninguno", partes: [] };
+  // Letras a resaltar en las tablas: las del SKU nuevo, o (formato anterior) las del producto en Odoo.
+  const p = prod || {};
+  const sel = d.formato === "nuevo" ? Object.fromEntries(d.partes.map((x) => [x.que, x.txt]))
+    : d.formato === "anterior" ? { categoria: p.catL, color: p.col && p.col.l } : {};
+  const circ = (hex) => `<span class="circ" style="background:${/^#[0-9a-f]{3,8}$/i.test(hex || "") ? hex : "transparent"}"></span>`;
+  const tabla = (titulo, filas, que) => `<div class="label">${titulo}</div>
+    <table class="guia-tabla">${filas.map((f) => `<tr class="${sel[que] === f.l ? "on" : ""}"><td class="num">${esc(f.l)}</td><td>${que === "color" ? circ(f.hex) : ""}${esc(f.n)}</td></tr>`).join("")}</table>`;
+  let root = document.getElementById("guia-root");
+  if (!root) { root = document.createElement("div"); root.id = "guia-root"; document.body.appendChild(root); }
+  root.innerHTML = `
+    <div class="guia" role="dialog" aria-label="Guía de SKU">
+      <div class="backdrop" data-act="cerrarGuia"></div>
+      <div class="guia-panel">
+        <div class="sheet-head"><span></span><h2>Guía de SKU</h2><button class="icon-btn" data-act="cerrarGuia" aria-label="Cerrar">${I.x}</button></div>
+        <div class="guia-body">
+          ${d.partes.length ? `<div class="guia-cod">${d.partes.map((x) => `<div class="guia-caja ${x.que}"><b>${esc(x.txt)}</b>
+            <span>${x.que === "color" && x.hex ? circ(x.hex) : ""}${esc(x.nombre || "")}</span></div>`).join("")}</div>
+            ${d.formato === "anterior" ? `<p class="small muted">Formato anterior: KU + categoría + modelo del proveedor + color. Pronto cambia al corto, p. ej. KP004N.</p>` : ""}
+            ${d.partes.length === 3 ? `<p class="small muted">Sin color: el SKU termina en el modelo.</p>` : ""}` : ""}
+          ${code && d.formato === "otro" ? `<p class="small muted">Este código no sigue el formato de Kuu Kum.</p>` : ""}
+          <p class="small muted">Formato: <b>K</b> (Kuu Kum) + <b>categoría</b> + <b>modelo</b> de 3 números + <b>color</b>. Ejemplo: KP004N = Plumas, modelo 4, Negro.</p>
+          ${tablas && (tablas.categorias || []).length ? tabla("Categoría (2ª letra)", tablas.categorias, "categoria") + tabla("Color (última letra)", tablas.colores || [], "color")
+            : `<div class="notice info">Actualiza el catálogo en Ajustes para ver las tablas de letras.</div>`}
+        </div>
+      </div>
+    </div>`;
+}
+function cerrarGuia() { const r = document.getElementById("guia-root"); if (r) r.innerHTML = ""; }
+
 // ---------- Ficha rápida de la línea (i): foto principal de Odoo y precio por cantidad ----------
 function openInfo(k) {
   const it = S.draft.items[k]; if (!it) return;
@@ -957,7 +1003,11 @@ function openInfo(k) {
           <button class="info-act" data-act="shareFoto" aria-label="Compartir esta foto">${I.share}</button>
           <a class="info-act" id="info-tienda" target="_blank" rel="noopener" aria-label="Ver el producto en la tienda" aria-disabled="true">${I.tienda}</a>
         </div>
-        <p><b>${esc(cat.n || it.n)}</b></p>
+        <p><b>${esc(cat.n || it.n)}</b>${skuTag(cat.code || it.code, cat, "info-sku")}</p>
+        ${(cat.prov || []).length ? `
+          <div class="label">Proveedores</div>
+          <div class="info-prov">${cat.prov.map((x) => `<div class="info-prov-f"><span class="grow">${esc(x.n)}</span><span class="num">${esc(x.code)}</span>
+            <button class="pill soft" data-act="copiarCodigo" data-code="${esc(x.code)}" aria-label="Copiar el código ${esc(x.code)}">Copiar</button></div>`).join("")}</div>` : ""}
         ${t ? `
           <div class="label">Precio por cantidad (con logo)</div>
           <table class="info-tabla"><thead><tr><th>Piezas</th><th>Sin IVA</th><th>Con IVA</th></tr></thead><tbody>${filas}</tbody></table>
@@ -1146,6 +1196,13 @@ const ACT = {
     updateLine(k); saveDraft();
   },
   info: (el) => openInfo(Number(el.closest(".line").dataset.k)),
+  guiaSku: (el) => openGuia(el.dataset.sku || "", S.catalog.find((x) => x.k === el.dataset.k) || {}),
+  cerrarGuia: () => cerrarGuia(),
+  copiarCodigo: (el) => {
+    const code = el.dataset.code || "";
+    Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(code))
+      .then(() => toast("Código copiado: " + code)).catch(() => toast("No se pudo copiar: " + code, 3000));
+  },
   shareFoto: () => compartirFoto(),
   fotoNav: (el) => S.info && setFoto(S.info.i + Number(el.dataset.d)),
   fotoIr: (el) => setFoto(Number(el.dataset.i)),

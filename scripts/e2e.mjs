@@ -96,7 +96,7 @@ async function quote(over = {}) {
   const pl = r.data.productos.find((p) => p.id === 10);
   ok(pl && !("cat" in pl) && !("prov" in pl), "catálogo: sin categoría ni proveedores no agrega campos vacíos", pl);
   const tec = r.data.productos.find((p) => p.id === 11 && p.ptav);
-  ok(tec && tec.code === "GOR-001" && tec.cat === "Promocionales" && tec.prov && tec.prov.length === 2,
+  ok(tec && tec.code === "KU-GOR-A2148-NEG" && tec.cat === "Promocionales" && tec.prov && tec.prov.length === 2,
     "catálogo: la opción con técnica conserva SKU, categoría y proveedores", tec);
   ok(JSON.stringify(r.data.tablas && r.data.tablas.categorias) === JSON.stringify([{ l: "P", n: "Promocionales" }]), "catálogo: tabla de categorías por letra (solo las que tienen letra)", r.data.tablas);
   ok(r.data.tablas && JSON.stringify(r.data.tablas.colores.map((c) => c.l)) === JSON.stringify(["B", "N", "2"]) && r.data.tablas.colores.some((c) => c.l === "N" && c.n === "Negro" && c.hex === "#1A1A1A"),
