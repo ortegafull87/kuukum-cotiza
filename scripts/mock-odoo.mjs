@@ -46,7 +46,7 @@ const db = {
     { id: 900, name: "S00900", partner_id: 2, state: "sale", amount_total: 1000, order_line: [] },
     { id: 901, name: "S00901", partner_id: 4, state: "sale", amount_total: 500, order_line: [] }
   ],
-  "sale.order.line": [], "utm.source": [], "ir.attachment": [], "mail.mail": [], "mail.message": []
+  "sale.order.line": [], "utm.source": [], "crm.tag": [], "ir.attachment": [], "mail.mail": [], "mail.message": []
 };
 const seq = { n: 1000 };
 const calls = [];
@@ -99,6 +99,16 @@ function applyLines(so, cmds) {
 }
 function err(status, message) { const e = new Error(message); e.status = status; throw e; }
 
+// Comandos many2many de Odoo: 4 = ligar, 3 = desligar, 6 = reemplazar.
+const m2m = (ids, cmds = []) => {
+  let out = [...ids];
+  for (const [c, id, lista] of cmds) {
+    if (c === 4 && !out.includes(id)) out.push(id);
+    if (c === 3) out = out.filter((x) => x !== id);
+    if (c === 6) out = [...lista];
+  }
+  return out;
+};
 const METHODS = {
   search_read: (m, b) => db[m].filter((r) => match(m, r, b.domain)).slice(0, b.limit || 1e9).map((r) => out(m, r, b.fields)),
   search: (m, b) => db[m].filter((r) => match(m, r, b.domain)).slice(0, b.limit || 1e9).map((r) => r.id),
@@ -107,7 +117,7 @@ const METHODS = {
   read: (m, b) => b.ids.map((id) => rec(m, id) || err(422, `Record does not exist or has been deleted. (Record: ${m}(${id},))`)).map((r) => out(m, r, b.fields)),
   create: (m, b) => b.vals_list.map((v) => {
     const r = { id: ++seq.n, active: true, write_date: now(), ...v };
-    if (m === "sale.order") { r.name = "S" + String(r.id).padStart(5, "0"); r.state = "draft"; delete r.order_line; db[m].push(r); applyLines(r, v.order_line); return r.id; }
+    if (m === "sale.order") { r.name = "S" + String(r.id).padStart(5, "0"); r.state = "draft"; delete r.order_line; r.tag_ids = m2m([], v.tag_ids); db[m].push(r); applyLines(r, v.order_line); return r.id; }
     if (m === "res.partner") r.parent_id = false;
     if (m === "mail.mail") r.state = "outgoing";
     if (m === "ir.attachment") {
@@ -122,8 +132,9 @@ const METHODS = {
     for (const id of b.ids) {
       const r = rec(m, id);
       if (m === "sale.order" && ["sale", "cancel"].includes(r.state) && b.vals.order_line) err(422, "No se puede modificar un pedido confirmado");
-      const { order_line, ...rest } = b.vals;
+      const { order_line, tag_ids, ...rest } = b.vals;
       Object.assign(r, rest, { write_date: now() });
+      if (tag_ids) r.tag_ids = m2m(r.tag_ids || [], tag_ids);
       if (m === "sale.order" && order_line) applyLines(r, order_line);
     }
     return true;

@@ -132,6 +132,8 @@ async function orderVals(env, call, config, q, knownPartner = null) {
   const folio = folioVisible(q.folio, q.rev);
   const vence = new Date(q.fecha); vence.setDate(vence.getDate() + (Number(q.vigencia) || 15));
   const note = [
+    q.comparativa ? "<p><strong>COTIZACIÓN COMPARATIVA</strong>: cada renglón es una opción para que el cliente compare; " +
+      "no se suman y no es válida para facturación. Cuando elija, se convierte en formal desde Cotiza App.</p>" : "",
     "<p><strong>TÉRMINOS Y CONDICIONES</strong></p>",
     `<p>Anticipo del ${q.anticipoPct}% para confirmar el pedido. Tiempo de entrega: ${esc(q.entrega)}.</p>`,
     `<p>${esc(config.terminos)}</p>`,
@@ -140,8 +142,16 @@ async function orderVals(env, call, config, q, knownPartner = null) {
     `<p><em>Folio app ${esc(folio)} · Sello ${esc(q.sello)}</em></p>`
   ].join("");
 
+  // Comparativa (0.4.25): etiqueta "Comparativa" en Odoo. Al convertirla en formal (revisión sin la marca) se quita.
+  // Solo se agrega o quita esa etiqueta (4/3): las que Eunice ponga a mano en Odoo se respetan.
+  const rev = Number(q.rev) || 1;
+  const tagId = q.comparativa || rev > 1
+    ? await getOrCreate(env, call, "crm.tag", [["name", "=ilike", "Comparativa"]], { name: "Comparativa" }, "odoo:tag:comparativa")
+    : null;
+
   return {
     partner_id: partnerId,
+    ...(tagId ? { tag_ids: [[q.comparativa ? 4 : 3, tagId]] } : {}),
     client_order_ref: folio,
     source_id: sourceId,
     validity_date: vence.toISOString().slice(0, 10),
@@ -156,7 +166,8 @@ function sealRecord(q, t, autor, odooName, historial) {
     sello: q.sello, email: autor, odoo: odooName, rev: Number(q.rev) || 1, historial,
     snapshot: {
       fecha: q.fecha, cliente: q.cliente.nombre, tel: q.cliente.tel || "",
-      items: q.items.map((i) => ({ n: i.n, q: i.q, p: i.p })),
+      items: q.items.map((i) => ({ n: i.n, q: i.q, p: i.p, ...(i.sku ? { sku: i.sku } : {}) })),
+      ...(q.comparativa ? { comparativa: true } : {}),
       desc: q.desc, iva: !!q.iva, anticipoPct: q.anticipoPct,
       total: t.total, anticipo: t.anticipo
     }

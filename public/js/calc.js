@@ -26,6 +26,22 @@ export function calc(q) {
   return { sub, costo, desc, base, iva, total, ganancia, margen, anticipo, saldo };
 }
 
+// Cotización comparativa: cada renglón es una opción que NO se suma con las demás. Se muestra con y sin IVA aunque
+// la cotización vaya sin IVA, para que el cliente lo contemple. Los cargos de arte se cobran una vez con cualquier
+// opción. Las opciones van agrupadas por producto (en el orden en que se agregaron) y de menos a más piezas.
+export const IVA = 0.16;
+export function opcionesComparativa(q) {
+  const f = 1 - (Number(q.desc) || 0) / 100;
+  // Con descuento, el precio unitario que se muestra ya lo trae, para que cantidad × unitario = importe.
+  const fila = (i) => { const unit = r2(i.p * f), importe = r2(i.q * unit); return { ...i, unit, importe, conIva: r2(importe * (1 + IVA)) }; };
+  const items = (q.items || []).map((i, k) => ({ ...i, k }));   // k: posición original del renglón
+  const llave = (i) => i.productId ? `${i.productId}|${i.ptav || ""}` : "libre:" + i.n;
+  const orden = [...new Set(items.filter((i) => !i.arte).map(llave))];
+  const opciones = items.filter((i) => !i.arte).map(fila)
+    .sort((a, b) => orden.indexOf(llave(a)) - orden.indexOf(llave(b)) || Number(a.q) - Number(b.q));
+  return { opciones, cargos: items.filter((i) => i.arte).map(fila) };
+}
+
 // Precio capturado a mano (es-MX): "1,500" -> 1500 · "1500.50" -> 1500.5 · "150,50" -> 150.5 · "$1,500.50" -> 1500.5.
 // Una sola coma seguida de 1–2 dígitos al final es decimal; si no, la coma separa miles.
 export function parseMoney(v) {

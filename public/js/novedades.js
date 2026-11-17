@@ -1,11 +1,22 @@
 // Recorridos guiados de novedades (Driver.js, en public/vendor/driver.js). La primera vez que ella llega a la pantalla
 // donde ocurrió un cambio, 1–3 burbujas lo explican; si ya lo vio o lo saltó, no vuelve a salir.
 // Los vistos viven en localStorage (kk_tours) y nunca se borran al reparar ni al actualizar.
-import { ls, logError } from "./store.js?v=0.4.24";
+import { ls, logError } from "./store.js?v=0.4.25";
 
 // Una entrada por cambio visible. El id nunca se reutiliza ni se cambia (es lo que se guarda como "visto").
 // Se conservan las de las últimas ~3 versiones; las más viejas se borran del archivo.
 export const NOVEDADES = [
+  {
+    id: "0.4.25-comparativa",
+    titulo: "Cotización comparativa",
+    ruta: "#/nueva",
+    pasos: [
+      { el: "#comparativa", titulo: "Cotización comparativa",
+        texto: "Para que el cliente compare la misma pieza con 20, 50 o 100 piezas. Cada renglón sale como opción con su SKU y su total con IVA, no se suman y el PDF dice que no es válida para facturación. Se activa aquí, o sola cuando agregas un producto que ya estaba." },
+      { el: "#mini3", titulo: "Opciones",
+        texto: "Aquí ves cada opción con y sin IVA. Cuando el cliente elija, abre la cotización y toca «Convertir en formal»: se hace la siguiente revisión ya con total, anticipo y datos de pago." }
+    ]
+  },
   {
     id: "0.4.24-mismo-producto",
     titulo: "Mismo producto, varias cantidades",

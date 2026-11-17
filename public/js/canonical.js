@@ -2,6 +2,7 @@
 // Compartido por la app (firma) y la API (verificación). Si cambias el formato, sube la versión.
 // kk-v1: cotizaciones originales (rev 1). No cambiar: hay sellos emitidos con este formato.
 // kk-v2: revisiones (rev ≥ 2) = kk-v1 + línea final "rev:N".
+// Comparativas: cualquiera de los dos + "comp:1" y "sku:A|B|…" al final.
 const norm = (s) => String(s || "").normalize("NFC").replace(/\s+/g, " ").trim();
 const digits = (s) => String(s || "").replace(/\D/g, "");
 
@@ -20,6 +21,8 @@ export function canonical(q, t) {
     `anticipo:${t.anticipo.toFixed(2)}`
   ];
   if (rev > 1) lines.push(`rev:${rev}`);
+  // Comparativa (0.4.25): se firma la marca y el SKU de cada renglón, que salen en el PDF. Las normales no cambian.
+  if (q.comparativa) lines.push("comp:1", `sku:${(q.items || []).map((i) => norm(i.sku)).join("|")}`);
   return lines.join("\n");
 }
 

@@ -1,16 +1,16 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.24";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.24";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.24";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.24";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.24";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.24";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.24";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.24";
-import { desarmarSku } from "./sku.js?v=0.4.24";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto, opcionesComparativa } from "./calc.js?v=0.4.25";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.25";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.25";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.25";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.25";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.25";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.25";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.25";
+import { desarmarSku } from "./sku.js?v=0.4.25";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.24";
+const APP_VERSION = "0.4.25";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -520,6 +520,9 @@ function stepCondiciones() {
       <div class="chips wrap">${[0, 5, 10, 15, 20].map((v) => `<button class="chip ${Number(d.desc) === v ? "on" : ""}" data-act="desc" data-v="${v}">${v ? v + "%" : "Sin descuento"}</button>`).join("")}</div>
     </div>
     <div class="card">
+      <label class="toggle"><span>Cotización comparativa<br><span class="small muted">Cada renglón es una opción: no se suman, salen con IVA y no es válida para facturación.</span></span><input type="checkbox" id="comparativa" ${d.comparativa ? "checked" : ""}></label>
+    </div>
+    <div class="card">
       <label class="toggle">Agregar IVA 16%<input type="checkbox" id="iva" ${d.iva ? "checked" : ""}></label>
       <div class="grid2">
         <label class="field">Anticipo %<input class="num" id="anticipoPct" inputmode="numeric" value="${esc(d.anticipoPct)}"></label>
@@ -531,6 +534,7 @@ function stepCondiciones() {
     <div class="card" id="mini3">${totalsBlock(d)}</div>`;
 }
 function totalsBlock(q) {
+  if (q.comparativa) return opcionesBlock(q);
   const t = calc(q);
   return `
     <div class="kv"><span>Subtotal</span><span class="num">${money(t.sub)}</span></div>
@@ -540,6 +544,20 @@ function totalsBlock(q) {
     ${q.iva ? "" : `<div class="muted small">Precios sin IVA</div>`}`;
 }
 
+// Comparativa: una fila por opción con su total con IVA, sin total general.
+function opcionesBlock(q) {
+  const { opciones, cargos } = opcionesComparativa(q);
+  const fila = (o) => `<div class="kv"><span>${esc(o.q)} × ${esc(corto(o.n))}<br><span class="small muted num">${esc(o.sku || "")}${o.sku ? " · " : ""}${money(o.importe)} sin IVA</span></span><span class="num"><b>${money(o.conIva)}</b><br><span class="small muted">con IVA</span></span></div>`;
+  return `<div class="notice info">Comparativa: cada renglón es una opción, no se suman. No es válida para facturación.</div>
+    ${opciones.map(fila).join("")}
+    ${cargos.length ? `<div class="muted small">Cargo único con cualquier opción:</div>${cargos.map(fila).join("")}` : ""}
+    ${Number(q.desc) ? `<div class="muted small">Precios con ${q.desc}% de descuento.</div>` : ""}`;
+}
+const pagoCard = (q, t, saldo = "Saldo contra entrega") => q.comparativa ? "" : `<div class="card"><h3>Pago requerido</h3>
+      <div class="kv"><span>Anticipo ${q.anticipoPct}%</span><span class="num" style="color:var(--ok);font-weight:700">${money(t.anticipo)}</span></div>
+      <div class="kv"><span>${saldo}</span><span class="num">${money(t.saldo)}</span></div>
+    </div>`;
+
 // Paso 4: verificar
 function stepVerificar() {
   const d = S.draft, t = calc(d);
@@ -547,21 +565,19 @@ function stepVerificar() {
     <div class="card"><h3>Cliente</h3>
       <div><b style="font-size:17px">${esc(d.cliente.nombre)}</b><div class="muted small">${esc([d.cliente.tel, d.cliente.email].filter(Boolean).join(" · "))} · ${canalName(d.canal)}</div></div>
     </div>
+    ${d.comparativa ? `<div class="card"><h3>Opciones</h3>${opcionesBlock(d)}</div>` : `
     <div class="card"><h3>Productos</h3>
-      ${d.items.map((i) => `<div class="kv"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
+      ${d.items.map((i) => `<div class="kv"><span>${i.q} × ${esc(i.n)}${skuDe(i) ? `<br><span class="small muted num">${esc(skuDe(i))}</span>` : ""}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
     </div>
-    <div class="card"><h3>Totales</h3>${totalsBlock(d)}</div>
-    <div class="card"><h3>Pago requerido</h3>
-      <div class="kv"><span>Anticipo ${d.anticipoPct}%</span><span class="num" style="color:var(--ok);font-weight:700">${money(t.anticipo)}</span></div>
-      <div class="kv"><span>Saldo contra entrega</span><span class="num">${money(t.saldo)}</span></div>
-    </div>
+    <div class="card"><h3>Totales</h3>${totalsBlock(d)}</div>`}
+    ${pagoCard(d, t)}
     <div class="card"><h3>Condiciones</h3>
       <div class="kv"><span>Entrega</span><span>${esc(d.entrega)}</span></div>
       <div class="kv"><span>Vigencia</span><span>${esc(d.vigencia)} días</span></div>
       ${d.notas ? `<div class="muted small">${esc(d.notas)}</div>` : ""}
     </div>
     ${correoPaso4(d)}
-    <div class="profit"><div><small>Tu ganancia (no sale en el PDF)</small><b>${money(t.ganancia)}</b><small>Costo ${money(t.costo)}</small></div>${marginBadge(t.margen)}</div>
+    ${d.comparativa ? "" : `<div class="profit"><div><small>Tu ganancia (no sale en el PDF)</small><b>${money(t.ganancia)}</b><small>Costo ${money(t.costo)}</small></div>${marginBadge(t.margen)}</div>`}
     <div class="muted small num" id="sealline">Generando sello…</div>`;
 }
 // Correo solo para clientes cautivos (≥1 pedido confirmado y con correo). El servidor lo vuelve a validar.
@@ -583,6 +599,7 @@ async function prepareSeal() {
     if (!d.folio) d.folio = nextFolio(S.user);
     d.fecha = new Date().toISOString();
     d.creadoPor = S.user.email;
+    d.items.forEach((i) => { if (!i.sku) { const s = skuDe(i); if (s) i.sku = s; } });   // el SKU sale en el PDF
     d.sello = await sign(d);
     saveDraft();
     const el = document.getElementById("sealline");
@@ -695,7 +712,9 @@ function renderList() {
           return `<button class="qcard ${estadoInfo(q).apagada ? "apagada" : ""}" data-act="nav" data-to="/cotizacion/${q.uuid}">
             <div class="r1"><span class="folio">${esc(q.folio)}${revOf(q) > 1 ? ` · R${revOf(q)}` : ""}</span>${statusChip(q)}</div>
             <div class="muted">${esc(q.cliente.nombre)} · ${canalName(q.canal)}</div>
-            <div class="r3"><span class="muted small">${pzs} pza${pzs === 1 ? "" : "s"} · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total">${money(t.total)}</span></div>
+            <div class="r3">${q.comparativa
+              ? `<span class="muted small">Comparativa · ${opcionesComparativa(q).opciones.length} opciones · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total small">Sin total</span>`
+              : `<span class="muted small">${pzs} pza${pzs === 1 ? "" : "s"} · ${new Date(q.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}${q.enviada ? " · Enviada" : ""}</span><span class="total">${money(t.total)}</span>`}</div>
           </button>`;
         }).join("") : `<div class="empty">${all.length ? "Nada con ese filtro." : "Aún no hay cotizaciones. Toca <b>Nueva</b> para empezar."}</div>`}</div>
         ${S.verOcultas ? `<button class="linkbtn" data-act="verOcultas" data-v="0">Volver a todas</button>`
@@ -731,18 +750,17 @@ function renderDetail(uuid) {
             <div class="grid2"><button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar como nueva</button>
               ${q.revPrev ? `<button class="pill ghost" data-act="undoRev" data-uuid="${q.uuid}">Descartar R${revOf(q)}</button>` : ""}</div>` : ""}
         </div>
+        ${q.comparativa ? `<div class="card"><h3>Opciones</h3>${opcionesBlock(q)}</div>` : `
         <div class="card"><h3>Productos</h3>
           ${q.items.map((i) => `<div class="kv"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
         </div>
-        <div class="card"><h3>Totales</h3>${totalsBlock(q)}</div>
-        <div class="card"><h3>Pago requerido</h3>
-          <div class="kv"><span>Anticipo ${q.anticipoPct}%</span><span class="num" style="color:var(--ok);font-weight:700">${money(t.anticipo)}</span></div>
-          <div class="kv"><span>Saldo</span><span class="num">${money(t.saldo)}</span></div>
-        </div>
-        <div class="profit"><div><small>Tu ganancia</small><b>${money(t.ganancia)}</b></div>${marginBadge(t.margen)}</div>
+        <div class="card"><h3>Totales</h3>${totalsBlock(q)}</div>`}
+        ${pagoCard(q, t, "Saldo")}
+        ${q.comparativa ? "" : `<div class="profit"><div><small>Tu ganancia</small><b>${money(t.ganancia)}</b></div>${marginBadge(t.margen)}</div>`}
         <div class="muted small num">${I.shield.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} Sello ${esc(folioDe(q))} · ${formatSeal(q.sello)}</div>
         ${permite.reenviar ? `<button class="pill block" data-act="resend" data-uuid="${q.uuid}">${q.enviada ? "Reenviar PDF" : "Enviar PDF"}</button>` : ""}
         ${permite.correo ? correoDetalle(q) : ""}
+        ${q.comparativa && q.sync !== "conflicto" && permite.editar ? `<button class="pill soft block" data-act="conv" data-uuid="${q.uuid}">Convertir en formal (el cliente ya eligió)</button>` : ""}
         ${q.sync !== "conflicto" && permite.editar
           ? `<div class="grid2"><button class="pill soft" data-act="edit" data-uuid="${q.uuid}">Editar</button><button class="pill soft" data-act="dup" data-uuid="${q.uuid}">Duplicar</button></div>`
           : `<button class="pill soft block" data-act="dup" data-uuid="${q.uuid}">Duplicar</button>`}
@@ -899,15 +917,16 @@ async function doVerify() {
   const show = (ok, title, snap, warn) => {
     out.innerHTML = `<div class="verify ${warn ? "warn" : ok ? "ok" : "bad"}"><b style="font-size:18px">${title}</b>${snap ? `
       <div>${esc(snap.cliente)} · ${new Date(snap.fecha).toLocaleDateString("es-MX")}</div>
-      ${snap.items.map((i) => `<div class="kv small"><span>${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
-      <div class="kv big"><span>Total</span><span class="num">${money(snap.total)}</span></div>
+      ${snap.comparativa ? `<div class="small"><b>Cotización comparativa:</b> cada renglón es una opción, no se suman. No es válida para facturación.</div>` : ""}
+      ${snap.items.map((i) => `<div class="kv small"><span>${i.sku ? esc(i.sku) + " · " : ""}${i.q} × ${esc(i.n)}</span><span class="num">${money(i.q * i.p)}</span></div>`).join("")}
+      ${snap.comparativa ? "" : `<div class="kv big"><span>Total</span><span class="num">${money(snap.total)}</span></div>`}
       <div class="small">Compara estos datos contra el PDF que te mostraron. Si algo no coincide, el PDF fue alterado.</div>` : ""}</div>`;
   };
   const local = quotes.all().find((q) => q.folio === folio);
   if (local && local.sello === sello) {
     const t = calc(local);
     const nv = noVigente(local.estadoOdoo);
-    return show(true, (nv ? "✅ Sello auténtico · " + nv : "✅ Auténtica") + (revOf(local) > 1 ? ` · R${revOf(local)}` : ""), { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total }, !!nv);
+    return show(true, (nv ? "✅ Sello auténtico · " + nv : "✅ Auténtica") + (revOf(local) > 1 ? ` · R${revOf(local)}` : ""), { cliente: local.cliente.nombre, fecha: local.fecha, items: local.items, total: t.total, comparativa: !!local.comparativa }, !!nv);
   }
   const h = local && (local.historial || []).find((x) => x.sello === sello);
   if (h) return old(h.rev, revOf(local), h.total, calc(local).total);
@@ -927,6 +946,17 @@ async function doVerify() {
 // ---------- Texto para WhatsApp ----------
 function quoteText(q) {
   const t = calc(q);
+  if (q.comparativa) {
+    const { opciones, cargos } = opcionesComparativa(q);
+    const fila = (o) => `• ${o.sku ? o.sku + " · " : ""}${o.q} × ${o.n} — ${money(o.unit)} c/u = ${money(o.importe)} + IVA = *${money(o.conIva)}*`;
+    return `*Cotización comparativa Kuukum ${folioDe(q)}*\nPara: ${q.cliente.nombre}\n\n` +
+      `Cada opción es independiente (no se suman):\n` + opciones.map(fila).join("\n") +
+      (cargos.length ? `\n\nCargo único con cualquier opción:\n` + cargos.map(fila).join("\n") : "") +
+      (Number(q.desc) ? `\n\nPrecios con ${q.desc}% de descuento.` : "") +
+      `\n\nNo es un pedido ni es válida para facturación. Elige una opción y te mando tu cotización formal.\n` +
+      `Entrega: ${q.entrega} · Vigencia: ${q.vigencia} días` + (q.notas ? `\n${q.notas}` : "") +
+      `\n\nSello: ${formatSeal(q.sello)}`;
+  }
   return `*Cotización Kuukum ${folioDe(q)}*\nPara: ${q.cliente.nombre}\n\n` +
     q.items.map((i) => `• ${i.q} × ${i.n} — ${money(i.p)} c/u = ${money(i.q * i.p)}`).join("\n") + "\n\n" +
     (Number(q.desc) ? `Descuento ${q.desc}%: −${money(t.desc)}\n` : "") + (q.iva ? `IVA 16%: ${money(t.iva)}\n` : "") +
@@ -1096,6 +1126,8 @@ async function compartirFoto() {
 const ARTE_CODE = "KU-SRV-ARTE";
 const esArte = (x) => !!x && (x.code === ARTE_CODE || x.ant === ARTE_CODE);
 const arteProd = () => S.catalog.find(esArte);
+// SKU del renglón; los renglones guardados antes de 0.4.25 no lo traen y se toma del catálogo.
+const skuDe = (it) => it.sku || (it.productId ? (S.catalog.find((x) => x.id === it.productId && x.code) || {}).code || "" : "");
 function openArte() {
   const a = arteProd();
   $sheet.innerHTML = `
@@ -1117,10 +1149,47 @@ function openArte() {
 }
 function agregaArte(precio) {
   const a = arteProd(); if (!a) return closeSheet();
-  S.draft.items.push({ productId: a.id, n: a.n, q: 1, p: Math.max(0, precio || 0), c: a.c || 0, arte: true, fijo: "p" });
+  S.draft.items.push({ productId: a.id, sku: a.code || null, n: a.n, q: 1, p: Math.max(0, precio || 0), c: a.c || 0, arte: true, fijo: "p" });
   saveDraft(); closeSheet();
   ACT.step({ dataset: { to: "3" } });
   toast(precio > 0 ? `Cargo de arte: ${money(precio)}` : "Arte y preparación sin cargo");
+}
+
+// ---------- Cotización comparativa (0.4.25) ----------
+// Mismo producto con varias cantidades para que el cliente compare. En el PDF cada renglón es una opción con su total
+// con IVA, sin total general ni datos de pago, y la leyenda de que no es válida para facturación.
+const hojaHtml = (titulo, cuerpo, botones) => `
+    <div class="backdrop" data-act="closeSheet"></div>
+    <div class="sheet" role="dialog" aria-label="${esc(titulo)}">
+      <div class="sheet-top"><div class="grab"></div>
+        <div class="sheet-head"><span></span><h2>${esc(titulo)}</h2><button class="icon-btn" data-act="closeSheet" aria-label="Cerrar">${I.x}</button></div></div>
+      <div class="body">${cuerpo}</div>
+      <div class="foot">${botones}</div>
+    </div>`;
+// Al repetir un producto: activar la comparativa, dejarla como cotización normal o quitar el renglón que se acaba de agregar.
+function openComparativa() {
+  const it = S.draft.items[S.draft.items.length - 1];
+  $sheet.innerHTML = hojaHtml("¿Cotización comparativa?", `
+      <p>Agregaste otra vez <b>${esc(corto(it.n))}</b>, ahora con ${esc(it.q)} pzs.</p>
+      <p>¿Es para que el cliente compare precios por cantidad? En la <b>cotización comparativa</b> cada renglón es una opción:
+        salen el SKU y el total con IVA de cada una, no se suman y lleva la leyenda de que no es válida para facturación.</p>
+      <button class="pill block" data-act="compSi">Sí, hacerla comparativa</button>`,
+    `<button class="pill ghost" data-act="compError">Fue un error, quitarlo</button>
+      <button class="pill soft" data-act="compNo">No, se suman</button>`);
+}
+// Convertir en formal: el cliente eligió. Se arma la revisión siguiente con las opciones marcadas (y los cargos de arte).
+function openConvertir(uuid) {
+  const q = quotes.get(uuid); if (!q) return;
+  const { opciones } = opcionesComparativa(q);
+  S.conv = { uuid, sel: new Set() };
+  $sheet.innerHTML = hojaHtml("Convertir en formal", `
+      <p>¿Qué opción eligió el cliente? Se hace la revisión ${revOf(q) + 1} del mismo folio, ya como cotización normal,
+        con total, anticipo y datos de pago.</p>
+      ${opciones.map((o) => `<label class="toggle"><span>${esc(o.q)} × ${esc(corto(o.n))}<br><span class="small muted num">${esc(o.sku || "")} · ${money(o.conIva)} con IVA</span></span>
+        <input type="checkbox" data-conv="${o.k}"></label>`).join("")}
+      ${q.items.some((i) => i.arte) ? `<p class="small muted">El cargo de arte se queda.</p>` : ""}`,
+    `<button class="pill ghost" data-act="closeSheet">Cancelar</button>
+      <button class="pill" data-act="convertir">Convertir</button>`);
 }
 
 // ---------- Acciones ----------
@@ -1186,11 +1255,13 @@ const ACT = {
     // Siempre renglón nuevo (0.4.24): el mismo producto puede ir varias veces con distintas piezas
     // (p. ej. 20, 50 y 100) para que el cliente compare; cada renglón toma el precio de su tramo.
     const repetido = S.draft.items.some((i) => i.productId === p.id && (i.ptav || null) === (p.ptav || null));
-    const it = { productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c,
+    const it = { productId: p.id, ptav: p.ptav || null, sku: p.code || null, n: p.n, q: SH.q, p: p.p, c: p.c,
       ...(p.t ? { t: p.t, min: p.min || null } : {}), ...(esArte(p) ? { arte: true } : {}) };
     S.draft.items.push(it);
     aplicaTramo(it);
     saveDraft(); closeSheet(); renderWizard();
+    // Repetir producto suele ser una comparativa: se pregunta una vez por borrador (salvo arte, que no compara).
+    if (repetido && !esArte(p) && !S.draft.comparativa && !S.draft.compNo) return openComparativa();
     toast(repetido ? `Agregado en otro renglón: ${SH.q} × ${p.n.split(".")[0]}` : `Agregado: ${SH.q} × ${p.n.split(".")[0]}`, repetido ? 3000 : undefined);
   },
   addFree: () => {
@@ -1223,6 +1294,23 @@ const ACT = {
     const k = Number(el.closest(".line").dataset.k), it = S.draft.items[k];
     delete it.fijo; delete it.m; aplicaTramo(it); saveDraft(); renderWizard();
   },
+  compSi: () => { S.draft.comparativa = true; saveDraft(); closeSheet(); renderWizard(); toast("Cotización comparativa activada. Puedes cambiarlo en el paso 3.", 3500); },
+  compNo: () => { S.draft.compNo = true; saveDraft(); closeSheet(); toast("Va como cotización normal: los renglones se suman.", 3000); },
+  compError: () => { S.draft.items.pop(); saveDraft(); closeSheet(); renderWizard(); toast("Renglón quitado"); },
+  convertir: () => {
+    const q = S.conv && quotes.get(S.conv.uuid); if (!q) return closeSheet();
+    const elegidas = [...document.querySelectorAll("[data-conv]")].filter((c) => c.checked).map((c) => Number(c.dataset.conv));
+    if (!elegidas.length) return toast("Marca la opción que eligió el cliente");
+    if (S.draft && (S.draft.cliente.nombre || S.draft.items.length) && !confirm("Ya tienes un borrador en curso. ¿Reemplazarlo?")) return;
+    closeSheet();
+    S.draft = newDraft({ uuid: q.uuid, folio: q.folio, rev: revOf(q) + 1, editOf: q.uuid, creadoPor: q.creadoPor,
+      cliente: { ...q.cliente }, canal: q.canal, items: q.items.filter((i, k) => i.arte || elegidas.includes(k)).map((i) => ({ ...i })),
+      desc: q.desc, iva: q.iva, anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas,
+      comparativa: false, compNo: true, step: 3 });
+    S.newClient = false; saveDraft(); go("/nueva");
+    toast("Revisa IVA y anticipo, y guarda la cotización formal", 3500);
+  },
+  conv: (el) => openConvertir(el.dataset.uuid),
   arteSi: () => agregaArte(parseMoney(document.getElementById("arteval").value)),
   arteNo: () => agregaArte(0),
   delLine: (el) => { S.draft.items.splice(Number(el.closest(".line").dataset.k), 1); saveDraft(); renderWizard(); },
@@ -1277,7 +1365,7 @@ const ACT = {
     const q = quotes.get(el.dataset.uuid);
     if (S.draft && (S.draft.cliente.nombre || S.draft.items.length) && !confirm("Ya tienes un borrador en curso. ¿Reemplazarlo?")) return;
     S.draft = newDraft({ cliente: { ...q.cliente }, canal: q.canal, items: q.items.map((i) => ({ ...i })), desc: q.desc, iva: q.iva,
-      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2 });
+      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, comparativa: !!q.comparativa, step: 2 });
     saveDraft(); go("/nueva");
   },
   edit: (el) => {
@@ -1286,7 +1374,7 @@ const ACT = {
     if (S.draft && (S.draft.cliente.nombre || S.draft.items.length) && !confirm("Ya tienes un borrador en curso. ¿Reemplazarlo?")) return;
     S.draft = newDraft({ uuid: q.uuid, folio: q.folio, rev: revOf(q) + 1, editOf: q.uuid, creadoPor: q.creadoPor,
       cliente: { ...q.cliente }, canal: q.canal, items: q.items.map((i) => ({ ...i })), desc: q.desc, iva: q.iva,
-      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, step: 2 });
+      anticipoPct: q.anticipoPct, entrega: q.entrega, vigencia: q.vigencia, notas: q.notas, comparativa: !!q.comparativa, step: 2 });
     S.newClient = false; saveDraft(); go("/nueva");
   },
   undoRev: (el) => {
@@ -1596,6 +1684,7 @@ document.addEventListener("change", (e) => {
     if (it) e.target.value = f === "m" ? margenTxt(it) : String(it[f]);
   }
   if (e.target.id === "iva" && S.draft) { S.draft.iva = e.target.checked; saveDraft(); updateMini3(); }
+  if (e.target.id === "comparativa" && S.draft) { S.draft.comparativa = e.target.checked; if (!e.target.checked) S.draft.compNo = true; saveDraft(); updateMini3(); }
   if (e.target.id === "porCorreo" && S.draft) { S.draft.porCorreo = e.target.checked; saveDraft(); }
   if (e.target.id === "rp-pantalla") RP.pantalla = e.target.value;
   if (e.target.id === "rp-fotos") { const files = [...e.target.files]; e.target.value = ""; addFotos(files); }

@@ -1,7 +1,7 @@
 // PDF de la cotización (jsPDF + autotable + qrcode-generator, todo local para funcionar offline).
-import { calc, money } from "./calc.js?v=0.4.24";
-import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.4.24";
-import { logError } from "./store.js?v=0.4.24";
+import { calc, money, opcionesComparativa } from "./calc.js?v=0.4.25";
+import { formatSeal, folioVisible, cleanSeal } from "./canonical.js?v=0.4.25";
+import { logError } from "./store.js?v=0.4.25";
 
 let logoData = null;
 const ICONOS = ["whatsapp", "telefono", "email", "web", "instagram", "facebook", "tiktok"];
@@ -11,7 +11,7 @@ const toDataUrl = async (url) => {
   return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
 };
 // Imágenes con ?v= (lo cambia bump-version.mjs): si cambian los íconos, el teléfono no reusa los viejos de su caché.
-const IMG_V = "?v=0.4.24";
+const IMG_V = "?v=0.4.25";
 export async function preloadLogo() {
   if (!logoData) logoData = await toDataUrl("/img/logo.png" + IMG_V);
   await Promise.all(ICONOS.filter((k) => !iconData[k]).map(async (k) => { iconData[k] = await toDataUrl(`/img/redes/${k}.png${IMG_V}`); }));
@@ -34,7 +34,9 @@ export function buildPdf(q, cfg) {
   // Encabezado blanco con logo y franja menta
   if (logoData) { try { doc.addImage(logoData, "PNG", M, 26, 64, 64); } catch {} }
   doc.setTextColor(...navy); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
-  doc.text("COTIZACIÓN", W - M, 48, { align: "right" });
+  const comp = !!q.comparativa;
+  if (comp) doc.setFontSize(17);
+  doc.text(comp ? "COTIZACIÓN COMPARATIVA" : "COTIZACIÓN", W - M, 48, { align: "right" });
   doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(60);
   const rev = Number(q.rev) || 1;
   doc.text(q.folio + (rev > 1 ? "  ·  Revisión " + rev : "") + (q.odoo && q.odoo.name ? "  ·  " + q.odoo.name : ""), W - M, 64, { align: "right" });
@@ -54,42 +56,78 @@ export function buildPdf(q, cfg) {
   const contacto = [q.cliente.tel && "Tel. " + q.cliente.tel, q.cliente.email].filter(Boolean).join("  ·  ");
   if (contacto) doc.text(contacto, M, y + 30);
 
-  // Partidas
-  doc.autoTable({
-    startY: y + 48, margin: { left: M, right: M },
-    head: [["Cant.", "Descripción", "P. unitario", "Importe"]],
-    body: q.items.map((i) => [String(i.q), i.n, money(i.p), money(i.q * i.p)]),
-    theme: "plain",
+  const sku = (i) => i.sku || "—";
+  const tabla = (head, body, columnStyles, startY) => doc.autoTable({
+    startY, margin: { left: M, right: M }, theme: "plain", body,
+    // El encabezado se alinea igual que su columna (cantidad al centro, importes a la derecha).
+    head: [head.map((h, k) => ({ content: h, styles: { halign: k === 1 ? "center" : k >= 3 ? "right" : "left" } }))],
     styles: { font: "helvetica", fontSize: 10, cellPadding: { top: 7, bottom: 7, left: 6, right: 6 }, textColor: 30, lineColor: [217, 226, 226], lineWidth: { bottom: 0.6 } },
     headStyles: { fillColor: [232, 246, 244], textColor: navy, fontStyle: "bold", fontSize: 9 },
-    columnStyles: { 0: { halign: "center", cellWidth: 44 }, 2: { halign: "right", cellWidth: 86 }, 3: { halign: "right", cellWidth: 92, fontStyle: "bold" } }
+    columnStyles: { 0: { fontSize: 8, textColor: 70, cellWidth: 92 }, ...columnStyles }
   });
-
-  // Totales
-  y = doc.lastAutoTable.finalY + 18;
-  const row = (lab, val, big) => {
-    doc.setFont("helvetica", big ? "bold" : "normal"); doc.setFontSize(big ? 13 : 10); doc.setTextColor(big ? 0 : 60);
-    doc.text(lab, W - M - 120, y, { align: "right" }); doc.text(val, W - M, y, { align: "right" });
-    y += big ? 22 : 16;
+  const caja = (titulo, texto) => {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+    const tx = doc.splitTextToSize(texto, W - 2 * M - 28);
+    const h = 30 + tx.length * 12;
+    doc.setFillColor(232, 246, 244); doc.roundedRect(M, y, W - 2 * M, h, 6, 6, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...navy); doc.text(titulo, M + 14, y + 18);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(60); doc.text(tx, M + 14, y + 32);
+    y += h + 16;
   };
-  row("Subtotal", money(t.sub));
-  if (Number(q.desc)) row(`Descuento ${q.desc}%`, "-" + money(t.desc));
-  if (q.iva) row("IVA 16%", money(t.iva));
-  y += 4; doc.setDrawColor(...menta); doc.setLineWidth(1.5); doc.line(W - M - 220, y - 12, W - M, y - 12);
-  row("TOTAL MXN", money(t.total), true);
-  if (!q.iva) { doc.setFontSize(8.5); doc.setTextColor(...gris); doc.text("Precios sin IVA.", W - M, y - 6, { align: "right" }); y += 6; }
 
-  // Pago requerido
-  y += 8;
-  doc.setFillColor(232, 246, 244); doc.roundedRect(M, y, W - 2 * M, 44, 6, 6, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...navy);
-  doc.text(`Anticipo ${q.anticipoPct}%: ${money(t.anticipo)}`, M + 14, y + 18);
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60);
-  doc.text(`Saldo contra entrega: ${money(t.saldo)}`, M + 14, y + 33);
-  doc.setFontSize(9);
-  doc.text(`${cfg.banco} · CLABE ${cfg.clabe}`, W - M - 14, y + 18, { align: "right" });
-  doc.text(`Beneficiario: ${cfg.beneficiario}`, W - M - 14, y + 33, { align: "right" });
-  y += 64;
+  if (comp) {
+    // Comparativa: cada renglón es una opción con su total con IVA; no hay total general ni datos de pago.
+    const { opciones, cargos } = opcionesComparativa(q);
+    const desc = Number(q.desc) ? ` (con ${q.desc}% de descuento)` : "";
+    tabla(["SKU", "Cant.", "Descripción", "P. unit. s/IVA", "Importe s/IVA", "Total con IVA"],
+      opciones.map((i) => [sku(i), String(i.q), i.n, money(i.unit), money(i.importe), money(i.conIva)]),
+      { 1: { halign: "center", cellWidth: 38 }, 3: { halign: "right", cellWidth: 70 }, 4: { halign: "right", cellWidth: 76 },
+        5: { halign: "right", cellWidth: 80, fontStyle: "bold" } }, y + 48);
+    y = doc.lastAutoTable.finalY + 18;
+    if (cargos.length) {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...navy);
+      doc.text("Cargo único, se suma a la opción que elijas:", M, y); y += 6;
+      tabla(["SKU", "Cant.", "Concepto", "P. unit. s/IVA", "Importe s/IVA", "Total con IVA"],
+        cargos.map((i) => [sku(i), String(i.q), i.n, money(i.unit), money(i.importe), money(i.conIva)]),
+        { 1: { halign: "center", cellWidth: 38 }, 3: { halign: "right", cellWidth: 70 }, 4: { halign: "right", cellWidth: 76 },
+          5: { halign: "right", cellWidth: 80, fontStyle: "bold" } }, y);
+      y = doc.lastAutoTable.finalY + 18;
+    }
+    caja("Cotización comparativa: cada renglón es una opción y no se suman entre sí",
+      `Precios en MXN${desc}. La última columna ya incluye IVA 16%. Esta cotización es para comparar opciones: no es un pedido ` +
+      "ni es válida para facturación. Elige la opción que prefieras y te enviamos tu cotización formal con anticipo y datos de pago.");
+  } else {
+    // Partidas
+    tabla(["SKU", "Cant.", "Descripción", "P. unitario", "Importe"],
+      q.items.map((i) => [sku(i), String(i.q), i.n, money(i.p), money(i.q * i.p)]),
+      { 1: { halign: "center", cellWidth: 40 }, 3: { halign: "right", cellWidth: 80 }, 4: { halign: "right", cellWidth: 86, fontStyle: "bold" } }, y + 48);
+
+    // Totales
+    y = doc.lastAutoTable.finalY + 18;
+    const row = (lab, val, big) => {
+      doc.setFont("helvetica", big ? "bold" : "normal"); doc.setFontSize(big ? 13 : 10); doc.setTextColor(big ? 0 : 60);
+      doc.text(lab, W - M - 120, y, { align: "right" }); doc.text(val, W - M, y, { align: "right" });
+      y += big ? 22 : 16;
+    };
+    row("Subtotal", money(t.sub));
+    if (Number(q.desc)) row(`Descuento ${q.desc}%`, "-" + money(t.desc));
+    if (q.iva) row("IVA 16%", money(t.iva));
+    y += 4; doc.setDrawColor(...menta); doc.setLineWidth(1.5); doc.line(W - M - 220, y - 12, W - M, y - 12);
+    row("TOTAL MXN", money(t.total), true);
+    if (!q.iva) { doc.setFontSize(8.5); doc.setTextColor(...gris); doc.text("Precios sin IVA.", W - M, y - 6, { align: "right" }); y += 6; }
+
+    // Pago requerido
+    y += 8;
+    doc.setFillColor(232, 246, 244); doc.roundedRect(M, y, W - 2 * M, 44, 6, 6, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...navy);
+    doc.text(`Anticipo ${q.anticipoPct}%: ${money(t.anticipo)}`, M + 14, y + 18);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(60);
+    doc.text(`Saldo contra entrega: ${money(t.saldo)}`, M + 14, y + 33);
+    doc.setFontSize(9);
+    doc.text(`${cfg.banco} · CLABE ${cfg.clabe}`, W - M - 14, y + 18, { align: "right" });
+    doc.text(`Beneficiario: ${cfg.beneficiario}`, W - M - 14, y + 33, { align: "right" });
+    y += 64;
+  }
 
   // Condiciones
   doc.setTextColor(...navy); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("Condiciones", M, y); y += 15;
@@ -149,7 +187,7 @@ export function buildPdf(q, cfg) {
 export const qrText = (q) => `KUUKUM|V1|${folioVisible(q.folio, q.rev)}|${cleanSeal(q.sello)}`;
 
 export function pdfName(q) {
-  return `Cotizacion_${folioVisible(q.folio, q.rev)}_${(q.cliente.nombre || "cliente").replace(/[^\wáéíóúñÁÉÍÓÚÑ]+/g, "_")}.pdf`;
+  return `${q.comparativa ? "Comparativa" : "Cotizacion"}_${folioVisible(q.folio, q.rev)}_${(q.cliente.nombre || "cliente").replace(/[^\wáéíóúñÁÉÍÓÚÑ]+/g, "_")}.pdf`;
 }
 
 // PDF en base64 para mandarlo por correo desde Odoo.
