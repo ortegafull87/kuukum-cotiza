@@ -1,4 +1,4 @@
-// Prueba de pantalla (no va al repo): guía de SKU y proveedores en la Ficha.
+// Prueba de pantalla de la guía de SKU (Playwright). Local: requiere Chrome, Playwright y el servidor con ALLOWED_EMAILS=prueba@ejemplo.mx; ajusta las rutas de import.
 import { chromium } from "/opt/npm-tools/node_modules/playwright/index.mjs";
 import { makeSession } from "/home/claude/cotiza/lib/core.js";
 
@@ -59,6 +59,37 @@ ok(await page.locator(".driver-popover").count() === 0, "recorrido: ya no vuelve
 await page.locator('#btn-guia-sku').click(); await w();
 ok(await page.locator(".guia-panel").isVisible() && !(await page.locator(".guia .guia-caja").count()) && await page.locator(".guia .guia-tabla").count() === 2, "Ajustes: la guía muestra solo las tablas");
 await page.screenshot({ path: "/tmp/ui-guia-ajustes.png" });
+await page.locator('.guia-panel [data-act="cerrarGuia"]').click(); await w();
+
+// 4. Revisión: el buscador no relee el catálogo guardado por cada resultado
+await page.goto(APP + "/#/nueva"); await w(1500);
+if (!(await page.locator('[data-act="openSheet"]').count())) {
+  await page.fill("#cq", "Scouts"); await w(); await page.locator('[data-act="pickClient"]').first().click(); await w();
+  if (!(await page.locator('[data-act="openSheet"]').count())) { await page.locator('[data-act="step"]').last().click(); await w(500); }
+}
+await page.locator('[data-act="openSheet"]').first().click(); await page.waitForSelector("#sq");
+await page.evaluate(() => { window.__lecturas = 0; const g = Storage.prototype.getItem; Storage.prototype.getItem = function (k) { if (/catalog/.test(k)) window.__lecturas++; return g.call(this, k); }; });
+await page.locator("#sq").pressSequentially("gorra", { delay: 30 }); await w();
+const lecturas = await page.evaluate(() => window.__lecturas);
+ok(lecturas === 0, "buscador: escribir no relee el catálogo guardado (lecturas: " + lecturas + ")");
+
+// 5. Revisión: cambiar de pantalla cierra la guía; la guía bloquea la pantalla de atrás
+await page.locator(".res .res-sku").first().click(); await w();
+ok(await page.evaluate(() => document.documentElement.classList.contains("hoja-abierta")), "guía abierta: la pantalla de atrás no se mueve");
+await page.evaluate(() => { location.hash = "#/ajustes"; }); await w(800);
+ok(!(await page.locator(".guia-panel").count()), "cambiar de pantalla cierra la guía");
+await page.locator('#btn-guia-sku').click(); await w();
+ok(await page.evaluate(() => document.documentElement.classList.contains("hoja-abierta")), "guía desde Ajustes: la pantalla de atrás no se mueve");
+await page.locator('.guia-panel [data-act="cerrarGuia"]').click(); await w();
+ok(!(await page.evaluate(() => document.documentElement.classList.contains("hoja-abierta"))), "al cerrar la guía se libera la pantalla");
+
+// 6. Revisión: sin portapapeles no dice "copiado"
+await page.goto(APP + "/#/nueva"); await w(1500);
+await page.locator(".line .info-btn").first().click(); await w(800);
+await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true }));
+await page.locator('.sheet [data-act="copiarCodigo"]').first().click(); await w(200);
+const aviso = await page.locator("#toast").allInnerTexts();
+ok(aviso.some((t) => /No se pudo copiar/.test(t)) && !aviso.some((t) => /copiado/i.test(t)), "sin portapapeles: avisa que no se pudo copiar " + JSON.stringify(aviso));
 
 ok(errs.length === 0, "sin errores de JavaScript " + JSON.stringify(errs));
 await browser.close();

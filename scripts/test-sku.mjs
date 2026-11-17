@@ -22,6 +22,8 @@ ok(desarmarSku("KQ004N", tablas).partes[1].nombre === "Categoría no registrada"
 ok(desarmarSku("KO004N", tablas).formato === "otro" && desarmarSku("KI004N", tablas).formato === "otro", "I y O no son categorías válidas");
 ok(desarmarSku("KK-LIBRE", tablas).formato === "otro" && desarmarSku("", tablas).formato === "otro" && desarmarSku(undefined, tablas).formato === "otro", "otros códigos");
 ok(desarmarSku("KP004N", undefined).partes[1].nombre === "", "sin tablas no truena");
+ok(desarmarSku("KP004N", { categorias: [], colores: [] }).partes[1].nombre === "", "tablas vacías (Odoo no respondió) cuentan como sin tablas, no como 'no registrada'");
+ok(desarmarSku("KU-PLU-1115A-NEG", tablas, { cat: "Plumas" }).partes[3].nombre === "Color no registrado", "anterior sin color en Odoo: 'Color no registrado'");
 
 if (fails) { console.log(`\n${fails} prueba(s) fallaron`); process.exit(1); }
 console.log("\nTodas pasaron");

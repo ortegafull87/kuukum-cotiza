@@ -59,6 +59,7 @@ const S = {
   cfg: ls.get("config", null),
   catalog: enrich((ls.get("catalog", null) || { productos: [] }).productos),
   revisar: (ls.get("catalog", null) || { revisar: [] }).revisar || [],
+  tablas: (ls.get("catalog", null) || {}).tablas || null,   // letras SKU de Odoo (guía de SKU)
   clientes: (ls.get("clientes", null) || { clientes: [] }).clientes,
   draft: ls.get("draft", null),
   authExpired: false,
@@ -211,7 +212,7 @@ async function refresh(manual = false) {
     S.user = me; ls.set("user", me); S.authExpired = false;
     const [cfg, cat, cli] = await Promise.all([api("config"), api("catalogo"), api("clientes")]);
     S.cfg = cfg; ls.set("config", cfg);
-    ls.set("catalog", cat); S.catalog = enrich(cat.productos); S.revisar = cat.revisar || [];
+    ls.set("catalog", cat); S.catalog = enrich(cat.productos); S.revisar = cat.revisar || []; S.tablas = cat.tablas || null;
     refrescaTramosBorrador();
     ls.set("clientes", cli); S.clientes = cli.clientes;
     if (!route() || route() === "/" ) go("/nueva");
@@ -252,7 +253,7 @@ function render() {
 const tourOcupado = () => !!S.sending;
 function renderRoute() {
   const r = route();
-  closeSheet(); closeScanner(); stopActionsObs();
+  closeSheet(); cerrarGuia(); closeScanner(); stopActionsObs();
   // Ajustes regresa a donde se abrió: al asistente (el borrador sigue donde estaba) o a la lista.
   // (Registro, Verificar y Reportar se abren desde Ajustes: no cambian a dónde regresa.)
   if (r.startsWith("/ajustes") && S.prevRoute) {
@@ -601,7 +602,7 @@ function openSheet() {
 }
 function closeSheet() { $sheet.innerHTML = ""; }
 // Con una hoja abierta, la pantalla de atrás no se mueve.
-new MutationObserver(() => document.documentElement.classList.toggle("hoja-abierta", $sheet.childElementCount > 0))
+new MutationObserver(() => document.documentElement.classList.toggle("hoja-abierta", $sheet.childElementCount > 0 || !!document.querySelector("#guia-root > *")))
   .observe($sheet, { childList: true });
 document.addEventListener("click", (e) => {
   const a = e.target.closest("#info-tienda[aria-disabled]");
@@ -935,12 +936,13 @@ function quoteText(q) {
 }
 
 // ---------- Guía de SKU: capa encima de todo (no cierra la hoja ni cambia de pantalla) ----------
-// Las letras vienen de Odoo con el catálogo (tablas); un catálogo guardado antes de 0.4.21 no las trae.
-const tablasSku = () => (ls.get("catalog", {}) || {}).tablas;
+// Las letras vienen de Odoo con el catálogo (S.tablas); un catálogo guardado antes de 0.4.21 no las trae.
+const tablasSku = () => S.tablas;
 // SKU que se puede tocar para abrir la guía; los códigos que no siguen el formato se muestran sin enlace.
+// (Para saber el formato no hacen falta las tablas: se pinta en cada tecla del buscador.)
 function skuTag(code, prod, cls) {
   if (!code) return "";
-  if (desarmarSku(code, tablasSku(), prod || {}).formato === "otro") return `<span class="${cls}">${esc(code)}</span>`;
+  if (desarmarSku(code).formato === "otro") return `<span class="${cls}">${esc(code)}</span>`;
   return `<span class="${cls} sku-link" role="button" tabindex="0" data-act="guiaSku" data-sku="${esc(code)}" data-k="${esc((prod && prod.k) || "")}" aria-label="Qué significa el SKU ${esc(code)}">${esc(code)}</span>`;
 }
 function openGuia(code, prod) {
@@ -972,8 +974,14 @@ function openGuia(code, prod) {
         </div>
       </div>
     </div>`;
+  document.documentElement.classList.add("hoja-abierta");   // la pantalla de atrás no se mueve
 }
-function cerrarGuia() { const r = document.getElementById("guia-root"); if (r) r.innerHTML = ""; }
+function cerrarGuia() {
+  const r = document.getElementById("guia-root");
+  if (!r || !r.childElementCount) return;
+  r.innerHTML = "";
+  document.documentElement.classList.toggle("hoja-abierta", $sheet.childElementCount > 0);   // si hay hoja debajo, sigue bloqueada
+}
 
 // ---------- Ficha rápida de la línea (i): foto principal de Odoo y precio por cantidad ----------
 function openInfo(k) {
@@ -1200,8 +1208,9 @@ const ACT = {
   cerrarGuia: () => cerrarGuia(),
   copiarCodigo: (el) => {
     const code = el.dataset.code || "";
-    Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(code))
-      .then(() => toast("Código copiado: " + code)).catch(() => toast("No se pudo copiar: " + code, 3000));
+    const falla = () => toast("No se pudo copiar: " + code, 3000);
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return falla();
+    navigator.clipboard.writeText(code).then(() => toast("Código copiado: " + code), falla);
   },
   shareFoto: () => compartirFoto(),
   fotoNav: (el) => S.info && setFoto(S.info.i + Number(el.dataset.d)),

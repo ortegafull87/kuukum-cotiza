@@ -8,7 +8,8 @@ const ANTERIOR = /^KU-([A-Z]{3})-([A-Z0-9]+)(?:-([A-Z0-9]+))?$/;
 export function desarmarSku(code, tablas, prod = {}) {
   const c = String(code || "").trim().toUpperCase();
   const t = tablas || {};
-  const hay = !!(t.categorias && t.colores);
+  // Tablas vacías = Odoo no respondió con letras: se trata como "sin tablas", no como "no registrada".
+  const hay = !!((t.categorias || []).length && (t.colores || []).length);
   const buscar = (lista, l, falta) => (!hay ? { n: "" } : (lista || []).find((x) => x.l === l) || { n: falta });
 
   let m = c.match(NUEVO);
@@ -35,7 +36,7 @@ export function desarmarSku(code, tablas, prod = {}) {
     ];
     if (m[3]) {
       const col = prod.col || {};
-      partes.push({ txt: m[3], que: "color", nombre: col.n || "", ...(col.hex ? { hex: col.hex } : {}) });
+      partes.push({ txt: m[3], que: "color", nombre: col.n || "Color no registrado", ...(col.hex ? { hex: col.hex } : {}) });
     }
     return { formato: "anterior", partes };
   }

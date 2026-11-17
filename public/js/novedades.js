@@ -60,7 +60,7 @@ const visible = (sel) => { const el = document.querySelector(sel); return el && 
 
 // Algo en pantalla que un recorrido no debe tapar: escáner, hoja inferior, botón cargando, rescate o app en segundo plano.
 function pantallaOcupada() {
-  return document.visibilityState !== "visible" || !!document.querySelector(".scanner, #sheet-root > *, .loading, [aria-busy=\"true\"], #kk-rescue");
+  return document.visibilityState !== "visible" || !!document.querySelector(".scanner, #sheet-root > *, #guia-root > *, .loading, [aria-busy=\"true\"], #kk-rescue");
 }
 
 // Se llama al final de cada render. `ocupada()` dice si la app está en algo que no se debe interrumpir (p. ej. un envío).
