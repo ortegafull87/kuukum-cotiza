@@ -1,16 +1,16 @@
-import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.21";
-import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.21";
-import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.21";
-import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.21";
-import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.21";
-import { openScanner, closeScanner } from "./scanner.js?v=0.4.21";
-import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.21";
-import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.21";
-import { desarmarSku } from "./sku.js?v=0.4.21";
+import { calc, money, r2, parseMoney, margenLinea, precioDesdeMargen, MARGEN_MAX, precioTramo, tramoTexto } from "./calc.js?v=0.4.22";
+import { formatSeal, cleanSeal, folioVisible, splitFolio } from "./canonical.js?v=0.4.22";
+import { enrich, filter, facetValues, FACETAS } from "./catalog.js?v=0.4.22";
+import { ls, api, AuthError, quotes, nextFolio, needsSync, revOf, syncAll, saveSealKey, sign, clearKeys, outbox, flushOutbox, logError, refreshEstados } from "./store.js?v=0.4.22";
+import { preloadLogo, sharePdf, pdfBase64 } from "./pdf.js?v=0.4.22";
+import { openScanner, closeScanner } from "./scanner.js?v=0.4.22";
+import { collectDiagnostics, diagText } from "./diagnostics.js?v=0.4.22";
+import { NOVEDADES, maybeTour, startTour } from "./novedades.js?v=0.4.22";
+import { desarmarSku } from "./sku.js?v=0.4.22";
 
 const CLIENT_ID = "273765990336-id4d6tq1b77lqq35si9rk66eb94k16h3.apps.googleusercontent.com";
 // Versión: la cambia scripts/bump-version.mjs junto con public/version.json y CACHE de sw.js.
-const APP_VERSION = "0.4.21";
+const APP_VERSION = "0.4.22";
 // Canal por el que llegó el cliente. Los de texto (sin ícono) son buscadores, asistentes de IA y la tienda en línea.
 const CANALES = [["WA", "WhatsApp"], ["IG", "Instagram"], ["FB", "Facebook"], ["TT", "TikTok"],
   ["GO", "Google"], ["GP", "ChatGPT"], ["GE", "Gemini"], ["CL", "Claude"], ["TI", "Tienda"], ["OT", "Otro"]];
@@ -1049,8 +1049,9 @@ function openInfo(k) {
     });
   });
   // Liga a la tienda (solo si el producto está publicado ahí).
-  const sku = cat.code || (S.catalog.find((x) => x.id === it.productId && x.code) || {}).code || it.code;
-  if (sku) fetch(`/api/tienda?sku=${encodeURIComponent(sku)}`, { credentials: "same-origin" })
+  const enCat = cat.code ? cat : S.catalog.find((x) => x.id === it.productId && x.code) || {};
+  const sku = enCat.code || it.code, ant = enCat.ant;
+  if (sku) fetch(`/api/tienda?sku=${encodeURIComponent(sku)}${ant ? "&ant=" + encodeURIComponent(ant) : ""}`, { credentials: "same-origin" })
     .then((r) => (r.ok ? r.json() : null)).then((d) => {
       const a = document.getElementById("info-tienda");
       if (a && d && d.url && S.info === info) { a.href = d.url; a.removeAttribute("aria-disabled"); }
@@ -1090,10 +1091,11 @@ async function compartirFoto() {
 }
 
 // ---------- Cargo de arte y preparación ----------
-// Servicio de Odoo (KU-SRV-ARTE). Al pasar de Productos a Condiciones se pregunta una vez por cotización si se cobra;
+// Servicio de Odoo (KU-SRV-ARTE; con el SKU compacto se reconoce por su SKU anterior). Al pasar de Productos a Condiciones se pregunta una vez por cotización si se cobra;
 // si no, se agrega en $0 para que quede registrado que se decidió no cobrarlo.
 const ARTE_CODE = "KU-SRV-ARTE";
-const arteProd = () => S.catalog.find((x) => x.code === ARTE_CODE);
+const esArte = (x) => !!x && (x.code === ARTE_CODE || x.ant === ARTE_CODE);
+const arteProd = () => S.catalog.find(esArte);
 function openArte() {
   const a = arteProd();
   $sheet.innerHTML = `
@@ -1185,7 +1187,7 @@ const ACT = {
     let it = ex;
     if (ex) ex.q += SH.q;
     else S.draft.items.push(it = { productId: p.id, ptav: p.ptav || null, n: p.n, q: SH.q, p: p.p, c: p.c,
-      ...(p.t ? { t: p.t, min: p.min || null } : {}), ...(p.code === ARTE_CODE ? { arte: true } : {}) });
+      ...(p.t ? { t: p.t, min: p.min || null } : {}), ...(esArte(p) ? { arte: true } : {}) });
     aplicaTramo(it);
     saveDraft(); closeSheet(); renderWizard(); toast(`Agregado: ${SH.q} × ${p.n.split(".")[0]}`);
   },

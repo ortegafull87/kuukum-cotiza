@@ -18,7 +18,7 @@ export async function onRequestGet({ env, data }) {
     const call = odoo(env, data.log);
     const rows = await call("product.product", "search_read", {
       domain: [["sale_ok", "=", true], ["active", "=", true]],
-      fields: ["id", "display_name", "default_code", "list_price", "standard_price", "taxes_id", "product_tmpl_id", "categ_id", "product_template_attribute_value_ids"],
+      fields: ["id", "display_name", "default_code", "x_sku_anterior", "list_price", "standard_price", "taxes_id", "product_tmpl_id", "categ_id", "product_template_attribute_value_ids"],
       limit: 2000
     });
     const skip = new Set(String(data.config.excluir_codigos || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
@@ -99,6 +99,8 @@ export async function onRequestGet({ env, data }) {
       const o = {};
       const cat = Array.isArray(r.categ_id) ? String(r.categ_id[1]).split(" / ").pop().trim() : "";
       if (cat) o.cat = cat;
+      // SKU anterior (antes del SKU compacto): sirve para encontrar códigos viejos de WhatsApp o de cotizaciones pasadas.
+      if (r.x_sku_anterior && r.x_sku_anterior !== r.default_code) o.ant = r.x_sku_anterior;
       const pv = provDe(r);
       if (pv.length) o.prov = pv;
       const l = letraCat.get(m2oId(r.categ_id));

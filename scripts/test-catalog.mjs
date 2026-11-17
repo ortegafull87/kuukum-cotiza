@@ -24,5 +24,18 @@ ok(ids("negro") === "1,3,4,1", "nombre como hoy", ids("negro"));
 ok(ids("az") === "1,2,4,1", "texto corto busca por nombre, no por clave", ids("az"));
 ok(ids("") === "1,2,3,4,1", "sin texto: todos", ids(""));
 
+// Después del SKU compacto: el código viejo (WhatsApp o cotización pasada) sigue encontrando el producto.
+const migrado = enrich([{ id: 7, n: "Bolígrafo Basic tinta azul (Negro)", code: "KP001N", ant: "KU-PLU-1115A-NEG" }, { id: 8, n: "Bocina", code: "KT085B", ant: "KU-TEC-TEC179-NEG" }]);
+const idsM = (t) => filter(migrado, {}, t).map((p) => p.id).join(",");
+ok(idsM("KU-PLU-1115A-NEG") === "7", "SKU anterior completo: encuentra el producto renombrado", idsM("KU-PLU-1115A-NEG"));
+ok(idsM("kp001n") === "7", "SKU compacto en minúsculas", idsM("kp001n"));
+ok(idsM("KT085B") === "8", "SKU compacto exacto", idsM("KT085B"));
+
+// Botón "ver en la tienda": candidatos de SKU padre en la tienda.
+const { candidatosTienda } = await import("../functions/api/tienda.js");
+const ct = candidatosTienda("KP001N", "KU-PLU-1115A-NEG");
+ok(JSON.stringify(ct) === JSON.stringify(["KP001", "KP001N", "KU-PLU-1115A", "KU-PLU-1115A-NEG"]), "tienda: padre compacto primero y luego el anterior", ct);
+ok(JSON.stringify(candidatosTienda("KV001")) === JSON.stringify(["KV001"]), "tienda: producto sin color", candidatosTienda("KV001"));
+
 if (fails) { console.log(`\n${fails} prueba(s) fallaron`); process.exit(1); }
 console.log("\nTodas pasaron");

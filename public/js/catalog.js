@@ -63,7 +63,7 @@ export function enrich(products) {
       ...p,
       k: p.k || String(p.id),   // llave única: un producto puede venir varias veces (sin técnica y con cada técnica)
       _q: N(p.n + " " + (p.cat || "")),   // nombre + categoría
-      _k: [p.code, ...(p.prov || []).map((x) => x.code)].filter(Boolean).map(clave),   // SKU y códigos de proveedor
+      _k: [p.code, p.ant, ...(p.prov || []).map((x) => x.code)].filter(Boolean).map(clave),   // SKU, SKU anterior y códigos de proveedor
       tags: {
         prenda: pick(PRENDAS, n).slice(0, 1),
         genero: sg.genero ? [sg.genero] : [],
