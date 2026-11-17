@@ -8,7 +8,7 @@ const browser = await chromium.launch({ executablePath: "/usr/bin/google-chrome"
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 await ctx.addCookies([{ name: "kk_session", value: token, url: APP }]);
 await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: APP });
-await ctx.addInitScript(() => { try { localStorage.setItem("kk_tours", JSON.stringify(["0.4.14-ficha-rangos", "0.4.6-margen", "0.4.20-buscador-sku", "0.4.21-guia-sku"])); } catch {} });
+await ctx.addInitScript(() => { try { if (!localStorage.getItem("kk_tours")) localStorage.setItem("kk_tours", JSON.stringify(["0.4.14-ficha-rangos", "0.4.6-margen", "0.4.20-buscador-sku"])); } catch {} });
 const page = await ctx.newPage();
 const errs = []; page.on("pageerror", (e) => errs.push(e.message));
 let fails = 0;
@@ -50,8 +50,13 @@ ok(await page.locator(".guia-panel").isVisible(), "Ficha: tocar el SKU abre la g
 await page.locator('.guia-panel [data-act="cerrarGuia"]').click(); await w();
 
 // 3. Ajustes: guía sin SKU (solo tablas)
-await page.goto(APP + "/#/ajustes"); await w(1200);
-await page.locator('[data-act="guiaSku"]').first().click(); await w();
+await page.goto(APP + "/#/ajustes"); await w(1800);
+ok(await page.locator(".driver-popover").filter({ hasText: "Guía de SKU" }).count() === 1, "recorrido: sale una vez en Ajustes");
+await page.screenshot({ path: "/tmp/ui-tour-guia.png" });
+await page.keyboard.press("Escape"); await w(400);
+await page.reload(); await w(1800);
+ok(await page.locator(".driver-popover").count() === 0, "recorrido: ya no vuelve a salir");
+await page.locator('#btn-guia-sku').click(); await w();
 ok(await page.locator(".guia-panel").isVisible() && !(await page.locator(".guia .guia-caja").count()) && await page.locator(".guia .guia-tabla").count() === 2, "Ajustes: la guía muestra solo las tablas");
 await page.screenshot({ path: "/tmp/ui-guia-ajustes.png" });
 

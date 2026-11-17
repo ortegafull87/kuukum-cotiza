@@ -1,11 +1,20 @@
 // Recorridos guiados de novedades (Driver.js, en public/vendor/driver.js). La primera vez que ella llega a la pantalla
 // donde ocurrió un cambio, 1–3 burbujas lo explican; si ya lo vio o lo saltó, no vuelve a salir.
 // Los vistos viven en localStorage (kk_tours) y nunca se borran al reparar ni al actualizar.
-import { ls, logError } from "./store.js?v=0.4.20";
+import { ls, logError } from "./store.js?v=0.4.21";
 
 // Una entrada por cambio visible. El id nunca se reutiliza ni se cambia (es lo que se guarda como "visto").
 // Se conservan las de las últimas ~3 versiones; las más viejas se borran del archivo.
 export const NOVEDADES = [
+  {
+    id: "0.4.21-guia-sku",
+    titulo: "Guía de SKU",
+    ruta: "#/ajustes",
+    pasos: [
+      { el: "#btn-guia-sku", titulo: "Guía de SKU",
+        texto: "¿Qué significa cada letra del SKU? Aquí está la guía con las categorías y los colores. También la abres tocando el SKU de cualquier producto en el buscador o en la Ficha (i), donde además ves el código de cada proveedor para copiarlo." }
+    ]
+  },
   {
     id: "0.4.20-buscador-sku",
     titulo: "Buscar por SKU",
