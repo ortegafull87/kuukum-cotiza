@@ -76,13 +76,14 @@ export async function onRequestGet({ env, data }) {
         for (const t of tmpls) {
           const pieza = tramos.get(t.id) || [];
           const ops = [];
-          for (const sv of servs.filter((x) => (t.x_tecnica_ids || []).includes(x.id))) {
+          // En el orden de las técnicas del producto en Odoo (la primera es la que la tienda muestra elegida).
+          for (const sv of (t.x_tecnica_ids || []).map((id) => servs.find((x) => x.id === id)).filter(Boolean)) {
             const rs = reglas.filter((r) => m2oId(r.product_tmpl_id) === sv.id).map((r) => [Number(r.min_quantity) || 0, r2(r.fixed_price)]);
             const tt = sumarTramos(pieza, reglasTecnica(rs, sv.list_price));
             if (tt.length) ops.push({ s: sv.id, n: nombreTecnica(sv.name, sv.description_sale), t: tt });
           }
           // Con la casilla los tramos son solo la pieza: sin técnica con precio no se ofrece (va a "revisar").
-          opcionesTec.set(t.id, ops.sort((a, b) => a.t[0][1] - b.t[0][1]));
+          opcionesTec.set(t.id, ops);
         }
       } catch (e) {
         console.error("catalogo: precio pieza + técnica no disponible: " + e.message);
