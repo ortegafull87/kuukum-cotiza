@@ -1,6 +1,7 @@
 import { json, fail } from "../../lib/core.js";
 import { odoo } from "../../lib/odoo.js";
 import { indexarProveedores } from "../../lib/proveedores.js";
+import { sumarTramos, nombreTecnica } from "../../lib/precios.js";
 
 // Regla de Kuu Kum para personalizaciones (técnicas como Láser): precio = costo de la técnica + 25 %.
 // En Odoo el extra de la técnica guarda el PRECIO; el costo se saca de aquí para que el margen salga bien.
@@ -53,6 +54,39 @@ export async function onRequestGet({ env, data }) {
         tramos.get(tid).push([Number(it.min_quantity) || 0, r2(it.fixed_price)]);
       }
       for (const t of tramos.values()) t.sort((a, b) => a[0] - b[0]);
+    }
+    // Precio pieza + técnica (casilla x_precio_desglose): los tramos del producto son solo la pieza. Se ofrece una
+    // opción por técnica vendible de x_tecnica_ids con los tramos ya sumados (sin IVA), y no la pieza sola, para que
+    // nunca se cotice sin la técnica. Si algo falla, el producto queda con sus tramos como antes.
+    const opcionesTec = new Map();   // template -> [{ s: id del servicio, n: nombre público, t: [[mín, total]] }]
+    if (tmplIds.length) {
+      try {
+        const tmpls = await call("product.template", "search_read", {
+          domain: [["id", "in", tmplIds], ["x_precio_desglose", "=", true]], fields: ["id", "x_tecnica_ids"], limit: 2000
+        });
+        const servIds = [...new Set(tmpls.flatMap((t) => t.x_tecnica_ids || []))];
+        const servs = servIds.length ? await call("product.template", "search_read", {
+          domain: [["id", "in", servIds], ["sale_ok", "=", true]], fields: ["id", "name", "description_sale", "list_price"], limit: 500
+        }) : [];
+        const reglas = servs.length ? await call("product.pricelist.item", "search_read", {
+          domain: [["pricelist_id", "=", Number(data.config.pricelist_id) || 1], ["applied_on", "=", "1_product"],
+            ["compute_price", "=", "fixed"], ["product_tmpl_id", "in", servs.map((x) => x.id)]],
+          fields: ["product_tmpl_id", "min_quantity", "fixed_price"], limit: 2000
+        }) : [];
+        for (const t of tmpls) {
+          const pieza = tramos.get(t.id) || [];
+          const ops = [];
+          for (const sv of servs.filter((x) => (t.x_tecnica_ids || []).includes(x.id))) {
+            const rs = reglas.filter((r) => m2oId(r.product_tmpl_id) === sv.id).map((r) => [Number(r.min_quantity) || 0, r2(r.fixed_price)]);
+            const tt = sumarTramos(pieza, rs.length ? rs : Number(sv.list_price) > 0 ? [[1, Number(sv.list_price)]] : []);
+            if (tt.length) ops.push({ s: sv.id, n: nombreTecnica(sv.name, sv.description_sale), t: tt });
+          }
+          if (ops.length) opcionesTec.set(t.id, ops.sort((a, b) => a.t[0][1] - b.t[0][1]));
+        }
+      } catch (e) {
+        console.error("catalogo: precio pieza + técnica no disponible: " + e.message);
+        opcionesTec.clear();
+      }
     }
     // Códigos de proveedor (pestaña Compra → Proveedores): solo para buscar en Cotiza y mostrarlos a Eunice.
     const prov = [];
@@ -118,6 +152,14 @@ export async function onRequestGet({ env, data }) {
       if (p <= 1 || (c > 0 && p / c > 20)) { revisar.push({ id: r.id, n: nombre, p, c }); continue; }
       const iva = (r.taxes_id || []).length > 0;
       const code = r.default_code || undefined;
+      const ops = opcionesTec.get(m2oId(r.product_tmpl_id));
+      if (ops) {
+        const ex = extras(r);
+        for (const o of ops) {
+          out.push({ k: `${r.id}-tec${o.s}`, id: r.id, n: `${nombre} · ${o.n}`, p: o.t[0][1], c, iva, code, t: o.t, min: o.t[0][0] || undefined, ...ex });
+        }
+        continue;
+      }
       const tr = tramos.get(m2oId(r.product_tmpl_id));
       if (tr && tr.length) {
         out.push({ k: String(r.id), id: r.id, n: nombre, p, c, iva, code, t: tr, min: tr[0][0] || undefined, ...extras(r) });

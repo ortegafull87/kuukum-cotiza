@@ -1,11 +1,20 @@
 // Recorridos guiados de novedades (Driver.js, en public/vendor/driver.js). La primera vez que ella llega a la pantalla
 // donde ocurrió un cambio, 1–3 burbujas lo explican; si ya lo vio o lo saltó, no vuelve a salir.
 // Los vistos viven en localStorage (kk_tours) y nunca se borran al reparar ni al actualizar.
-import { ls, logError } from "./store.js?v=0.4.25";
+import { ls, logError } from "./store.js?v=0.4.26";
 
 // Una entrada por cambio visible. El id nunca se reutiliza ni se cambia (es lo que se guarda como "visto").
 // Se conservan las de las últimas ~3 versiones; las más viejas se borran del archivo.
 export const NOVEDADES = [
+  {
+    id: "0.4.26-tecnica",
+    titulo: "Precio con la técnica incluida",
+    ruta: "#/nueva",
+    pasos: [
+      { el: "button.dashed[data-act=openSheet]", titulo: "Elige la técnica en el buscador",
+        texto: "Algunos productos ahora salen una vez por técnica, por ejemplo «Bolígrafo Láser · Grabado láser». El precio por cantidad ya trae la pieza y la técnica sumadas, igual que en la tienda; ya no hace falta agregar la técnica aparte." }
+    ]
+  },
   {
     id: "0.4.25-comparativa",
     titulo: "Cotización comparativa",
