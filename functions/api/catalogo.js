@@ -1,7 +1,7 @@
 import { json, fail } from "../../lib/core.js";
 import { odoo } from "../../lib/odoo.js";
 import { indexarProveedores } from "../../lib/proveedores.js";
-import { sumarTramos, nombreTecnica } from "../../lib/precios.js";
+import { sumarTramos, nombreTecnica, reglasTecnica } from "../../lib/precios.js";
 
 // Regla de Kuu Kum para personalizaciones (técnicas como Láser): precio = costo de la técnica + 25 %.
 // En Odoo el extra de la técnica guarda el PRECIO; el costo se saca de aquí para que el margen salga bien.
@@ -78,10 +78,11 @@ export async function onRequestGet({ env, data }) {
           const ops = [];
           for (const sv of servs.filter((x) => (t.x_tecnica_ids || []).includes(x.id))) {
             const rs = reglas.filter((r) => m2oId(r.product_tmpl_id) === sv.id).map((r) => [Number(r.min_quantity) || 0, r2(r.fixed_price)]);
-            const tt = sumarTramos(pieza, rs.length ? rs : Number(sv.list_price) > 0 ? [[1, Number(sv.list_price)]] : []);
+            const tt = sumarTramos(pieza, reglasTecnica(rs, sv.list_price));
             if (tt.length) ops.push({ s: sv.id, n: nombreTecnica(sv.name, sv.description_sale), t: tt });
           }
-          if (ops.length) opcionesTec.set(t.id, ops.sort((a, b) => a.t[0][1] - b.t[0][1]));
+          // Con la casilla los tramos son solo la pieza: sin técnica con precio no se ofrece (va a "revisar").
+          opcionesTec.set(t.id, ops.sort((a, b) => a.t[0][1] - b.t[0][1]));
         }
       } catch (e) {
         console.error("catalogo: precio pieza + técnica no disponible: " + e.message);
@@ -153,6 +154,7 @@ export async function onRequestGet({ env, data }) {
       const iva = (r.taxes_id || []).length > 0;
       const code = r.default_code || undefined;
       const ops = opcionesTec.get(m2oId(r.product_tmpl_id));
+      if (ops && !ops.length) { revisar.push({ id: r.id, n: nombre, p, c, motivo: "Precio pieza + técnica sin técnica con precio de venta" }); continue; }
       if (ops) {
         const ex = extras(r);
         for (const o of ops) {
